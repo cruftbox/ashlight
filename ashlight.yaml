@@ -326,6 +326,15 @@ light:
     rgb_order: GRB         # WS2812B is green-red-blue on the wire
     restore_mode: ALWAYS_OFF
 
+    # ESPHome defaults this to 2.8, which raises each channel to the power 2.8
+    # before output. That smooths brightness ramps but it distorts hue, and it
+    # does the most damage exactly where this project lives, in the blended
+    # middles of the gradient. At AQI 52 the intended R=0.559 became R=0.196 and
+    # a yellow-green rendered as near-pure green. Worse, AQI 125 rendered as
+    # #FF2300 instead of #FF7D00, showing a full category redder than the air.
+    # Driving the channels linearly keeps the mixed hues correct.
+    gamma_correct: 1.0
+
     effects:
       # Shown from boot until the first successful poll, and again after three
       # consecutive fetch failures.
