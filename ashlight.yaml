@@ -1,8 +1,15 @@
-# Ashlight - Phase 4: the math.
-# Phases 1 to 3 plus the Barkjohn correction and 2024 EPA breakpoints, giving
-# a corrected PM2.5 sensor and our own AQI sensor. Still no color changes, no
-# hysteresis, and no brightness schedule. Those are Phase 5. The light block is
-# unchanged from Phase 2 and is still driven only by hand from Home Assistant.
+# Ashlight - Phase 5: behavior.
+# Everything from Phases 1 to 4 plus the ring actually reflecting the air.
+#
+# Colour is a continuous gradient rather than six discrete steps. The pure EPA
+# colour sits at the MIDPOINT of each category and blends toward the next one
+# as AQI rises, so deep inside a category reads as that colour, and a boundary
+# reads as a 50/50 mix. AQI 49 and AQI 51 therefore look nearly identical,
+# which they should, because the air is nearly identical.
+#
+# That also replaces category hysteresis. A continuous colour has no category
+# to flip between, so the only thing that needs damping is the input, which is
+# handled by a moving average on the corrected concentration.
 
 substitutions:
   # Not a secret, just site config. A private LAN address is harmless in a
@@ -18,6 +25,12 @@ esphome:
     # this the sensors sit unknown for two minutes after every reboot.
     priority: -100
     then:
+      # There is no reading yet, so show the offline state rather than black or
+      # a default colour that could be read as a measurement.
+      - light.turn_on:
+          id: ring
+          effect: "Sensor Offline"
+          brightness: 35%
       - delay: 15s
       - script.execute: poll_purpleair
 
@@ -56,6 +69,22 @@ http_request:
   useragent: esphome/ashlight
   timeout: 10s
 
+globals:
+  # The PA-II drops requests routinely: measured 7.2s, timeout, 4.1s, 0.1s over
+  # four consecutive tries. A single miss is normal and must not change what the
+  # lamp shows, so the failure state waits for several in a row.
+  - id: consecutive_failures
+    type: int
+    restore_value: no
+    initial_value: '0'
+
+# Home Assistant already knows the location, so we read sunrise/sunset from it
+# rather than putting the house coordinates in a config that gets published.
+text_sensor:
+  - platform: homeassistant
+    id: sun_state
+    entity_id: sun.sun
+
 script:
   # Shared by the boot automation and the 2 minute interval so the request is
   # defined once.
@@ -75,8 +104,10 @@ script:
               - lambda: |-
                   if (response->status_code != 200) {
                     ESP_LOGW("ashlight", "PurpleAir returned HTTP %d", response->status_code);
+                    id(consecutive_failures)++;
                     return;
                   }
+                  id(consecutive_failures) = 0;
                   json::parse_json(body, [](JsonObject root) -> bool {
                     // Particle fields use underscores. The AQI fields the plan
                     // tells us to ignore use dots. Both are valid JSON keys.
@@ -110,6 +141,16 @@ script:
                       corrected = 0.0f;
                     id(pm25_corrected).publish_state(corrected);
 
+                    // The sensor carries a moving average filter, so .state is
+                    // the smoothed value, not what we just handed it. Smooth the
+                    // concentration and derive AQI from that, never the reverse:
+                    // the concentration to AQI mapping is piecewise linear, so
+                    // averaging AQI values across a breakpoint is not the same
+                    // as the AQI of the averaged concentration.
+                    float smoothed = id(pm25_corrected).state;
+                    if (std::isnan(smoothed))
+                      smoothed = corrected;
+
                     // Step 3: 2024 EPA breakpoints. Good/Moderate is 9.0, not
                     // the pre-2024 12.0.
                     static const float C_LO[6] = {0.0f,   9.1f,  35.5f,  55.5f, 125.5f, 225.5f};
@@ -120,7 +161,7 @@ script:
                     // EPA truncates concentration to one decimal before lookup.
                     // That is what closes the gap between a band's top value and
                     // the next band's base, eg 9.0 to 9.1.
-                    float c = floorf(corrected * 10.0f) / 10.0f;
+                    float c = floorf(smoothed * 10.0f) / 10.0f;
 
                     float aqi = 500.0f;  // above 325.4 the scale is capped
                     if (c <= C_HI[5]) {
@@ -133,12 +174,63 @@ script:
                       }
                     }
                     id(aqi_corrected).publish_state(roundf(aqi));
+
+                    // Gradient anchors. The pure EPA colour sits at the MIDPOINT
+                    // of each category, so a category reads as itself when you
+                    // are solidly inside it and a boundary reads as a 50/50 mix.
+                    // Below the first anchor and above the last, the colour is
+                    // flat rather than extrapolated.
+                    static const float  AQ[7] = {0.0f, 25.0f, 75.0f, 125.0f, 175.0f, 250.0f, 400.0f};
+                    static const float  CR[7] = {0.00f, 0.00f, 1.00f, 1.00f, 1.00f, 0.561f, 0.494f};
+                    static const float  CG[7] = {0.894f, 0.894f, 1.00f, 0.494f, 0.00f, 0.247f, 0.00f};
+                    static const float  CB[7] = {0.00f, 0.00f, 0.00f, 0.00f, 0.00f, 0.592f, 0.137f};
+
+                    // Named outR/outG/outB because a and b are already the two
+                    // channel readings in this scope.
+                    float outR, outG, outB;
+                    if (aqi <= AQ[0]) {
+                      outR = CR[0]; outG = CG[0]; outB = CB[0];
+                    } else if (aqi >= AQ[6]) {
+                      outR = CR[6]; outG = CG[6]; outB = CB[6];
+                    } else {
+                      int k = 0;
+                      while (k < 6 && aqi > AQ[k + 1])
+                        k++;
+                      float t = (aqi - AQ[k]) / (AQ[k + 1] - AQ[k]);
+                      outR = CR[k] + t * (CR[k + 1] - CR[k]);
+                      outG = CG[k] + t * (CG[k + 1] - CG[k]);
+                      outB = CB[k] + t * (CB[k + 1] - CB[k]);
+                    }
+
+                    // Sixteen LEDs at full output is unpleasant at night. The
+                    // sun state comes from Home Assistant, so no coordinates
+                    // live in this file. If HA has not sent it yet the string is
+                    // empty, which falls through to the dim value.
+                    float bright = (id(sun_state).state == "above_horizon") ? 0.45f : 0.12f;
+
+                    ESP_LOGI("ashlight", "AQI %.0f  corrected %.2f  smoothed %.2f  rgb %.2f/%.2f/%.2f  bright %.2f",
+                             roundf(aqi), corrected, smoothed, outR, outG, outB, bright);
+
+                    auto call = id(ring).turn_on();
+                    call.set_effect("None");
+                    call.set_rgb(outR, outG, outB);
+                    call.set_brightness(bright);
+                    call.set_transition_length(3000);
+                    call.perform();
                     return true;
                   });
           on_error:
             then:
               - lambda: |-
-                  ESP_LOGW("ashlight", "PurpleAir fetch failed, sensor unreachable");
+                  id(consecutive_failures)++;
+                  ESP_LOGW("ashlight", "PurpleAir fetch failed (%d consecutive)",
+                           id(consecutive_failures));
+                  if (id(consecutive_failures) >= 3) {
+                    auto call = id(ring).turn_on();
+                    call.set_effect("Sensor Offline");
+                    call.set_brightness(0.35f);
+                    call.perform();
+                  }
 
 interval:
   # 2 minutes matches the sensor's own averaging window. Faster gains nothing.
@@ -191,6 +283,14 @@ sensor:
     device_class: pm25
     state_class: measurement
     update_interval: never
+    filters:
+      # 8 samples at one poll every 2 minutes is a 16 minute window, inside the
+      # 15 to 30 minutes the plan calls for. This is the only damping in the
+      # system: the colour gradient is continuous, so there is no category to
+      # apply hysteresis to.
+      - sliding_window_moving_average:
+          window_size: 8
+          send_every: 1
 
   # This is ours, computed from the corrected concentration. It is deliberately
   # not the sensor's own pm2.5_aqi, which is uncorrected and uses pre-2024
@@ -216,3 +316,18 @@ light:
     chipset: WS2812        # WS2812B uses the same timings
     rgb_order: GRB         # WS2812B is green-red-blue on the wire
     restore_mode: ALWAYS_OFF
+
+    effects:
+      # Shown from boot until the first successful poll, and again after three
+      # consecutive fetch failures. White is not in the AQI palette so it cannot
+      # be mistaken for a reading, and breathing distinguishes "no data" from
+      # "unplugged", which a static colour or plain off would not.
+      - addressable_lambda:
+          name: "Sensor Offline"
+          update_interval: 50ms
+          lambda: |-
+            float phase = (millis() % 4000) / 4000.0f;
+            float v = 0.35f + 0.30f * sinf(phase * 2.0f * (float) M_PI);
+            uint8_t w = (uint8_t) (v * 255.0f);
+            for (int i = 0; i < it.size(); i++)
+              it[i] = Color(w, w, w);

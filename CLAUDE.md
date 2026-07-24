@@ -136,6 +136,30 @@ The table ends at 325.4. Above that, clamp AQI at 500 and stay in Hazardous. Wri
 that branch now rather than leaving it undefined. This is Southern California and
 the project is named for ash, so it is reachable, not theoretical.
 
+### The colors are gradient anchors, not discrete steps
+
+As of Phase 5 the ring does not step between the six colors above. Each color is
+anchored at the **midpoint** of its category and the ring interpolates between
+anchors, so AQI 25 is pure green, AQI 75 is pure yellow, and the 50/51 boundary
+is a 50/50 yellow-green. Anchoring at midpoints rather than category edges keeps
+a category reading as itself when you are solidly inside it, while still showing
+proximity to the next one.
+
+| AQI | Anchor |
+|---|---|
+| 25 | `#00E400` Good |
+| 75 | `#FFFF00` Moderate |
+| 125 | `#FF7E00` Unhealthy for Sensitive Groups |
+| 175 | `#FF0000` Unhealthy |
+| 250 | `#8F3F97` Very Unhealthy |
+| 400 | `#7E0023` Hazardous |
+
+Below 25 and above 400 the color is flat rather than extrapolated.
+
+**This replaced category hysteresis.** A continuous color has no category to flip
+between, so the overshoot threshold described below is no longer needed. The only
+damping left is the moving average on the corrected concentration.
+
 ### Known-good check
 
 From the payload captured 2026-07-22: channels of 16.51 and 10.23, humidity 28.
@@ -150,9 +174,14 @@ The sensor reported 61 for the same moment. That difference is expected and corr
 
 **Hysteresis is not optional.** The house sits near the Good/Moderate boundary a
 lot of the time. Without it the lamp will visibly flip between green and yellow
-all afternoon. Either require a 3-5 point overshoot before changing category, or
-run a rolling average over 15-30 minutes, or both. An ambient display should be
-calm; that is the entire point of the object.
+all afternoon. An ambient display should be calm; that is the entire point of the
+object.
+
+Phase 5 solved this with the gradient rather than with an overshoot threshold. A
+continuous color cannot flip, so what remains is a 16 minute moving average on
+the corrected concentration, which is the 15 to 30 minute window called for here.
+If the gradient is ever reverted to discrete steps, the overshoot requirement
+comes back with it.
 
 **Smooth in the right order.** Average the corrected concentration, then compute
 AQI from that average. Do not average AQI values. The concentration-to-AQI mapping
