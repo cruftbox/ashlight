@@ -30,7 +30,13 @@ esphome:
       - light.turn_on:
           id: ring
           effect: "Sensor Offline"
-          brightness: 35%
+          # sun.sun may not have arrived from Home Assistant this early in boot,
+          # in which case the string is empty and this falls through to the dim
+          # value. Erring dim at boot is the right way round.
+          # Block scalar, because the ": " inside a C++ ternary parses as a YAML
+          # mapping on a single line.
+          brightness: !lambda |-
+            return id(sun_state).state == "above_horizon" ? 0.45f : 0.12f;
       - delay: 15s
       - script.execute: poll_purpleair
 
@@ -226,9 +232,12 @@ script:
                   ESP_LOGW("ashlight", "PurpleAir fetch failed (%d consecutive)",
                            id(consecutive_failures));
                   if (id(consecutive_failures) >= 3) {
+                    // Follow the same day/night schedule. A rotating pattern at
+                    // daytime output at 3am is worse than the reading it replaced.
+                    float bright = (id(sun_state).state == "above_horizon") ? 0.45f : 0.12f;
                     auto call = id(ring).turn_on();
                     call.set_effect("Sensor Offline");
-                    call.set_brightness(0.35f);
+                    call.set_brightness(bright);
                     call.perform();
                   }
 
@@ -319,15 +328,28 @@ light:
 
     effects:
       # Shown from boot until the first successful poll, and again after three
-      # consecutive fetch failures. White is not in the AQI palette so it cannot
-      # be mistaken for a reading, and breathing distinguishes "no data" from
-      # "unplugged", which a static colour or plain off would not.
+      # consecutive fetch failures.
+      #
+      # Three hard-edged R/G/B segments rotating around the ring. This does
+      # sweep through green and red, which do carry meaning on the AQI scale,
+      # so it bends the "no colour that means something" rule in the plan. It
+      # still cannot be misread as a valid reading: it moves, it shows three
+      # colours at once, and blue appears nowhere in the AQI palette. Motion is
+      # the cue that matters. It also distinguishes "no data" from "unplugged",
+      # which plain off would not.
+      #
+      # ~2.4s per revolution. Slow on purpose: this is an ambient object and a
+      # fast chase reads as an alarm.
       - addressable_lambda:
           name: "Sensor Offline"
-          update_interval: 50ms
+          update_interval: 150ms
           lambda: |-
-            float phase = (millis() % 4000) / 4000.0f;
-            float v = 0.35f + 0.30f * sinf(phase * 2.0f * (float) M_PI);
-            uint8_t w = (uint8_t) (v * 255.0f);
-            for (int i = 0; i < it.size(); i++)
-              it[i] = Color(w, w, w);
+            static int offset = 0;
+            const int n = it.size();
+            for (int i = 0; i < n; i++) {
+              int seg = (((i + offset) % n) * 3) / n;
+              if (seg == 0)      it[i] = Color(255, 0, 0);
+              else if (seg == 1) it[i] = Color(0, 255, 0);
+              else               it[i] = Color(0, 0, 255);
+            }
+            offset = (offset + 1) % n;
