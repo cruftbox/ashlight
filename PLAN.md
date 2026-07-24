@@ -61,6 +61,25 @@ The two rows sit next to each other and the mistake is an easy one.
 
 Do the AQI math ourselves. See CLAUDE.md for the formulas.
 
+## Known issue: the local endpoint is slow and unreliable
+
+Measured 2026-07-24 over four consecutive requests: 7.2s, timeout at 25s, 4.1s,
+0.1s. Same payload every time, 1286 bytes. The PA-II's onboard web server is
+simply slow and drops requests under no particular load.
+
+Two consequences:
+
+- **Failed polls are normal, not a fault.** Phase 5's failure state must not
+  treat a single miss as sensor-unreachable. Require several consecutive
+  failures before changing what the lamp shows, or the lamp will flick into the
+  error state during ordinary operation.
+- **ESP-IDF's HTTP client blocks the main loop.** While the device waits on a
+  slow fetch it cannot service the API, which shows up as Home Assistant going
+  briefly unavailable and as stalled log connections. The `timeout` in
+  `http_request` is the upper bound on that stall. It is set to 10s, which
+  catches most successful fetches while capping the freeze. Raising it buys a
+  few more successes at the cost of longer stalls.
+
 ## Known issue: channel A
 
 At capture time channel A read 16.51 cf_1 against channel B's 10.23, a 6.3 µg/m³

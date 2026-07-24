@@ -1,12 +1,25 @@
-# Ashlight - Phase 2: LED proof of concept.
-# Phase 1 (WiFi, api, ota, fallback AP, RSSI) plus a light block driven from
-# the Home Assistant color picker. Ring on clip leads: no resistor, no
-# capacitor, short wires, low brightness.
-# Do not add the HTTP poll or any AQI math here. That is Phase 3.
+# Ashlight - Phase 3: polling.
+# Phases 1 and 2 plus an HTTP fetch of the PA-II local JSON, parsed into three
+# template sensors. No AQI math, no correction, no color changes. Those are
+# Phases 4 and 5. The light block stays as-is from Phase 2 and is still driven
+# only by hand from Home Assistant.
+
+substitutions:
+  # Not a secret, just site config. A private LAN address is harmless in a
+  # published config, and keeping it here rather than in secrets.yaml means
+  # the YAML stays readable.
+  sensor_ip: "192.168.4.25"
 
 esphome:
   name: ashlight
   friendly_name: Ashlight
+  on_boot:
+    # Interval timers do not fire until one full period has elapsed, so without
+    # this the sensors sit unknown for two minutes after every reboot.
+    priority: -100
+    then:
+      - delay: 15s
+      - script.execute: poll_purpleair
 
 esp32:
   board: nologo_esp32c3_super_mini   # sets variant esp32c3 automatically
@@ -15,8 +28,6 @@ esp32:
 
 # The C3 has no UART bridge chip. Serial logging rides the native
 # USB Serial/JTAG peripheral, which is the same interface used to flash.
-# This is the default for the C3 on ESPHome 2026.3.x, set explicitly so a
-# different add-on version cannot change it underneath us.
 logger:
   hardware_uart: USB_SERIAL_JTAG
   level: DEBUG
@@ -41,10 +52,87 @@ wifi:
 
 captive_portal:
 
+http_request:
+  useragent: esphome/ashlight
+  timeout: 10s
+
+script:
+  # Shared by the boot automation and the 2 minute interval so the request is
+  # defined once.
+  - id: poll_purpleair
+    then:
+      - http_request.get:
+          url: http://${sensor_ip}/json
+          capture_response: true
+
+          # The measured payload is 1285 bytes and the default cap is 1kB.
+          # Leaving it at the default truncates the body, which then fails as
+          # a JSON parse error rather than as an obvious size error.
+          max_response_buffer_size: 4kB
+
+          on_response:
+            then:
+              - lambda: |-
+                  if (response->status_code != 200) {
+                    ESP_LOGW("ashlight", "PurpleAir returned HTTP %d", response->status_code);
+                    return;
+                  }
+                  json::parse_json(body, [](JsonObject root) -> bool {
+                    // Particle fields use underscores. The AQI fields the plan
+                    // tells us to ignore use dots. Both are valid JSON keys.
+                    if (root["pm2_5_cf_1"].is<float>())
+                      id(pm25_cf1_a).publish_state(root["pm2_5_cf_1"].as<float>());
+                    if (root["pm2_5_cf_1_b"].is<float>())
+                      id(pm25_cf1_b).publish_state(root["pm2_5_cf_1_b"].as<float>());
+                    if (root["current_humidity"].is<float>())
+                      id(sensor_humidity).publish_state(root["current_humidity"].as<float>());
+                    return true;
+                  });
+          on_error:
+            then:
+              - lambda: |-
+                  ESP_LOGW("ashlight", "PurpleAir fetch failed, sensor unreachable");
+
+interval:
+  # 2 minutes matches the sensor's own averaging window. Faster gains nothing.
+  - interval: 2min
+    then:
+      - script.execute: poll_purpleair
+
 sensor:
   - platform: wifi_signal
     name: "RSSI"
     update_interval: 60s
+
+  # Published from the JSON lambda, never self-polled, hence update_interval
+  # never. Channels stay separate so drift between them is visible: see the
+  # channel A note in PLAN.md.
+  - platform: template
+    name: "PM2.5 CF1 Channel A"
+    id: pm25_cf1_a
+    unit_of_measurement: "µg/m³"
+    accuracy_decimals: 2
+    device_class: pm25
+    state_class: measurement
+    update_interval: never
+
+  - platform: template
+    name: "PM2.5 CF1 Channel B"
+    id: pm25_cf1_b
+    unit_of_measurement: "µg/m³"
+    accuracy_decimals: 2
+    device_class: pm25
+    state_class: measurement
+    update_interval: never
+
+  - platform: template
+    name: "Sensor Humidity"
+    id: sensor_humidity
+    unit_of_measurement: "%"
+    accuracy_decimals: 0
+    device_class: humidity
+    state_class: measurement
+    update_interval: never
 
 # The C3 has RMT hardware, so esp32_rmt_led_strip is the correct platform.
 # neopixelbus and fastled_clockless are not the right choice here.
@@ -58,27 +146,3 @@ light:
     chipset: WS2812        # WS2812B uses the same timings
     rgb_order: GRB         # WS2812B is green-red-blue on the wire
     restore_mode: ALWAYS_OFF
-
-    # Demo effects. Not part of the AQI behavior, safe to strip before Phase 5.
-    effects:
-      # width matches num_leds so one full color wheel wraps the ring exactly
-      # once. The default of 50 would show only a third of the spectrum.
-      - addressable_rainbow:
-          name: "Rainbow Rotate"
-          speed: 10
-          width: 16
-
-      # Three hard-edged R/G/B segments chasing around the ring.
-      - addressable_lambda:
-          name: "RGB Segments"
-          update_interval: 80ms
-          lambda: |-
-            static int offset = 0;
-            const int n = it.size();
-            for (int i = 0; i < n; i++) {
-              int seg = (((i + offset) % n) * 3) / n;
-              if (seg == 0)      it[i] = Color(255, 0, 0);
-              else if (seg == 1) it[i] = Color(0, 255, 0);
-              else               it[i] = Color(0, 0, 255);
-            }
-            offset = (offset + 1) % n;
