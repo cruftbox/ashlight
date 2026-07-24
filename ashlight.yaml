@@ -1,6 +1,8 @@
-# Ashlight - Phase 1: bare board.
-# WiFi, api, ota, fallback AP, RSSI. No LEDs, nothing soldered.
-# Do not add the light or the HTTP poll here. Those are Phases 2 and 3.
+# Ashlight - Phase 2: LED proof of concept.
+# Phase 1 (WiFi, api, ota, fallback AP, RSSI) plus a light block driven from
+# the Home Assistant color picker. Ring on clip leads: no resistor, no
+# capacitor, short wires, low brightness.
+# Do not add the HTTP poll or any AQI math here. That is Phase 3.
 
 esphome:
   name: ashlight
@@ -43,3 +45,40 @@ sensor:
   - platform: wifi_signal
     name: "RSSI"
     update_interval: 60s
+
+# The C3 has RMT hardware, so esp32_rmt_led_strip is the correct platform.
+# neopixelbus and fastled_clockless are not the right choice here.
+# rmt_symbols defaults to 96 on the C3, which is fine for 16 pixels.
+light:
+  - platform: esp32_rmt_led_strip
+    name: "Ring"
+    id: ring
+    pin: GPIO3
+    num_leds: 16
+    chipset: WS2812        # WS2812B uses the same timings
+    rgb_order: GRB         # WS2812B is green-red-blue on the wire
+    restore_mode: ALWAYS_OFF
+
+    # Demo effects. Not part of the AQI behavior, safe to strip before Phase 5.
+    effects:
+      # width matches num_leds so one full color wheel wraps the ring exactly
+      # once. The default of 50 would show only a third of the spectrum.
+      - addressable_rainbow:
+          name: "Rainbow Rotate"
+          speed: 10
+          width: 16
+
+      # Three hard-edged R/G/B segments chasing around the ring.
+      - addressable_lambda:
+          name: "RGB Segments"
+          update_interval: 80ms
+          lambda: |-
+            static int offset = 0;
+            const int n = it.size();
+            for (int i = 0; i < n; i++) {
+              int seg = (((i + offset) % n) * 3) / n;
+              if (seg == 0)      it[i] = Color(255, 0, 0);
+              else if (seg == 1) it[i] = Color(0, 255, 0);
+              else               it[i] = Color(0, 0, 255);
+            }
+            offset = (offset + 1) % n;
