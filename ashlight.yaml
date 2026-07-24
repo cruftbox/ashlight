@@ -1,8 +1,8 @@
-# Ashlight - Phase 3: polling.
-# Phases 1 and 2 plus an HTTP fetch of the PA-II local JSON, parsed into three
-# template sensors. No AQI math, no correction, no color changes. Those are
-# Phases 4 and 5. The light block stays as-is from Phase 2 and is still driven
-# only by hand from Home Assistant.
+# Ashlight - Phase 4: the math.
+# Phases 1 to 3 plus the Barkjohn correction and 2024 EPA breakpoints, giving
+# a corrected PM2.5 sensor and our own AQI sensor. Still no color changes, no
+# hysteresis, and no brightness schedule. Those are Phase 5. The light block is
+# unchanged from Phase 2 and is still driven only by hand from Home Assistant.
 
 substitutions:
   # Not a secret, just site config. A private LAN address is harmless in a
@@ -80,12 +80,59 @@ script:
                   json::parse_json(body, [](JsonObject root) -> bool {
                     // Particle fields use underscores. The AQI fields the plan
                     // tells us to ignore use dots. Both are valid JSON keys.
-                    if (root["pm2_5_cf_1"].is<float>())
-                      id(pm25_cf1_a).publish_state(root["pm2_5_cf_1"].as<float>());
-                    if (root["pm2_5_cf_1_b"].is<float>())
-                      id(pm25_cf1_b).publish_state(root["pm2_5_cf_1_b"].as<float>());
-                    if (root["current_humidity"].is<float>())
-                      id(sensor_humidity).publish_state(root["current_humidity"].as<float>());
+                    float a = NAN, b = NAN, rh = NAN;
+
+                    if (root["pm2_5_cf_1"].is<float>()) {
+                      a = root["pm2_5_cf_1"].as<float>();
+                      id(pm25_cf1_a).publish_state(a);
+                    }
+                    if (root["pm2_5_cf_1_b"].is<float>()) {
+                      b = root["pm2_5_cf_1_b"].as<float>();
+                      id(pm25_cf1_b).publish_state(b);
+                    }
+                    if (root["current_humidity"].is<float>()) {
+                      rh = root["current_humidity"].as<float>();
+                      id(sensor_humidity).publish_state(rh);
+                    }
+
+                    // All three come from the same payload or we compute nothing.
+                    if (std::isnan(a) || std::isnan(b) || std::isnan(rh))
+                      return true;
+
+                    // Step 1: mean of the two cf_1 channels. Not atm.
+                    float avg = (a + b) / 2.0f;
+
+                    // Step 2: Barkjohn / EPA correction. RH is used raw. The
+                    // enclosure bias is already baked into the fitted form, so
+                    // offsetting humidity first makes the output worse.
+                    float corrected = 0.524f * avg - 0.0862f * rh + 5.75f;
+                    if (corrected < 0.0f)
+                      corrected = 0.0f;
+                    id(pm25_corrected).publish_state(corrected);
+
+                    // Step 3: 2024 EPA breakpoints. Good/Moderate is 9.0, not
+                    // the pre-2024 12.0.
+                    static const float C_LO[6] = {0.0f,   9.1f,  35.5f,  55.5f, 125.5f, 225.5f};
+                    static const float C_HI[6] = {9.0f,  35.4f,  55.4f, 125.4f, 225.4f, 325.4f};
+                    static const float A_LO[6] = {0.0f,  51.0f, 101.0f, 151.0f, 201.0f, 301.0f};
+                    static const float A_HI[6] = {50.0f, 100.0f, 150.0f, 200.0f, 300.0f, 500.0f};
+
+                    // EPA truncates concentration to one decimal before lookup.
+                    // That is what closes the gap between a band's top value and
+                    // the next band's base, eg 9.0 to 9.1.
+                    float c = floorf(corrected * 10.0f) / 10.0f;
+
+                    float aqi = 500.0f;  // above 325.4 the scale is capped
+                    if (c <= C_HI[5]) {
+                      for (int i = 0; i < 6; i++) {
+                        if (c <= C_HI[i]) {
+                          aqi = (A_HI[i] - A_LO[i]) / (C_HI[i] - C_LO[i])
+                                * (c - C_LO[i]) + A_LO[i];
+                          break;
+                        }
+                      }
+                    }
+                    id(aqi_corrected).publish_state(roundf(aqi));
                     return true;
                   });
           on_error:
@@ -131,6 +178,29 @@ sensor:
     unit_of_measurement: "%"
     accuracy_decimals: 0
     device_class: humidity
+    state_class: measurement
+    update_interval: never
+
+  # Output of step 2, published in its own right so the correction is visible
+  # and debuggable rather than buried inside the AQI number.
+  - platform: template
+    name: "PM2.5 Corrected"
+    id: pm25_corrected
+    unit_of_measurement: "µg/m³"
+    accuracy_decimals: 2
+    device_class: pm25
+    state_class: measurement
+    update_interval: never
+
+  # This is ours, computed from the corrected concentration. It is deliberately
+  # not the sensor's own pm2.5_aqi, which is uncorrected and uses pre-2024
+  # breakpoints. Expect ours to read lower.
+  - platform: template
+    name: "AQI"
+    id: aqi_corrected
+    unit_of_measurement: "AQI"
+    accuracy_decimals: 0
+    device_class: aqi
     state_class: measurement
     update_interval: never
 
