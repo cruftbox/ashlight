@@ -17,6 +17,12 @@ substitutions:
   # the YAML stays readable.
   sensor_ip: "192.168.4.25"
 
+  # Ring brightness, 0.0 to 1.0. Tune these rather than the lambdas.
+  # Below about 0.04 the 8-bit channels get coarse and mixed hues start to
+  # band, so the gradient degrades before the light does.
+  bright_day: "0.45"
+  bright_night: "0.06"
+
 esphome:
   name: ashlight
   friendly_name: Ashlight
@@ -36,7 +42,7 @@ esphome:
           # Block scalar, because the ": " inside a C++ ternary parses as a YAML
           # mapping on a single line.
           brightness: !lambda |-
-            return id(sun_state).state == "above_horizon" ? 0.45f : 0.12f;
+            return id(sun_state).state == "above_horizon" ? ${bright_day}f : ${bright_night}f;
       - delay: 15s
       - script.execute: poll_purpleair
 
@@ -212,7 +218,7 @@ script:
                     // sun state comes from Home Assistant, so no coordinates
                     // live in this file. If HA has not sent it yet the string is
                     // empty, which falls through to the dim value.
-                    float bright = (id(sun_state).state == "above_horizon") ? 0.45f : 0.12f;
+                    float bright = (id(sun_state).state == "above_horizon") ? ${bright_day}f : ${bright_night}f;
 
                     ESP_LOGI("ashlight", "AQI %.0f  corrected %.2f  smoothed %.2f  rgb %.2f/%.2f/%.2f  bright %.2f",
                              roundf(aqi), corrected, smoothed, outR, outG, outB, bright);
@@ -234,7 +240,7 @@ script:
                   if (id(consecutive_failures) >= 3) {
                     // Follow the same day/night schedule. A rotating pattern at
                     // daytime output at 3am is worse than the reading it replaced.
-                    float bright = (id(sun_state).state == "above_horizon") ? 0.45f : 0.12f;
+                    float bright = (id(sun_state).state == "above_horizon") ? ${bright_day}f : ${bright_night}f;
                     auto call = id(ring).turn_on();
                     call.set_effect("Sensor Offline");
                     call.set_brightness(bright);
