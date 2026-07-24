@@ -1,0 +1,45 @@
+# Ashlight - Phase 1: bare board.
+# WiFi, api, ota, fallback AP, RSSI. No LEDs, nothing soldered.
+# Do not add the light or the HTTP poll here. Those are Phases 2 and 3.
+
+esphome:
+  name: ashlight
+  friendly_name: Ashlight
+
+esp32:
+  board: nologo_esp32c3_super_mini   # sets variant esp32c3 automatically
+  framework:
+    type: esp-idf
+
+# The C3 has no UART bridge chip. Serial logging rides the native
+# USB Serial/JTAG peripheral, which is the same interface used to flash.
+# This is the default for the C3 on ESPHome 2026.3.x, set explicitly so a
+# different add-on version cannot change it underneath us.
+logger:
+  hardware_uart: USB_SERIAL_JTAG
+  level: DEBUG
+
+api:
+  encryption:
+    key: !secret api_encryption_key
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  # If the WiFi join fails, this AP comes up instead. Its presence is the
+  # signal that the firmware booted fine and only the network is wrong.
+  ap:
+    ssid: "Ashlight Fallback"
+    password: !secret fallback_ap_password
+
+captive_portal:
+
+sensor:
+  - platform: wifi_signal
+    name: "RSSI"
+    update_interval: 60s
