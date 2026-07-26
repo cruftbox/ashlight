@@ -115,6 +115,27 @@ text_sensor:
     entity_id: sun.sun
 
 script:
+  # Every way a poll can fail funnels through here. Previously only on_error
+  # could show the offline pattern, so a sensor answering HTTP 500, or answering
+  # 200 with a truncated or unusable body, would have incremented the counter
+  # forever while the ring held its last colour. Holding a stale colour
+  # indefinitely is the one failure behaviour the plan rules out.
+  - id: note_poll_failure
+    then:
+      - lambda: |-
+          id(consecutive_failures)++;
+          ESP_LOGW("ashlight", "PurpleAir poll failed (%d consecutive)",
+                   id(consecutive_failures));
+          if (id(consecutive_failures) >= ${fail_threshold}) {
+            // Follow the same day/night schedule. A rotating pattern at
+            // daytime output at 3am is worse than the reading it replaced.
+            float bright = (id(sun_state).state == "above_horizon") ? ${bright_day}f : ${bright_night}f;
+            auto call = id(ring).turn_on();
+            call.set_effect("Sensor Offline");
+            call.set_brightness(bright);
+            call.perform();
+          }
+
   # Shared by the boot automation and the 2 minute interval so the request is
   # defined once.
   - id: poll_purpleair
@@ -133,11 +154,15 @@ script:
               - lambda: |-
                   if (response->status_code != 200) {
                     ESP_LOGW("ashlight", "PurpleAir returned HTTP %d", response->status_code);
-                    id(consecutive_failures)++;
+                    id(note_poll_failure).execute();
                     return;
                   }
-                  id(consecutive_failures) = 0;
-                  json::parse_json(body, [](JsonObject root) -> bool {
+                  // parse_json returns false when the body is malformed or
+                  // overflowed the buffer, and otherwise returns whatever the
+                  // callback returns. The callback returns false when the body
+                  // parsed but did not carry the fields we need. A 200 with an
+                  // unusable payload is a failed poll, not a successful one.
+                  if (!json::parse_json(body, [](JsonObject root) -> bool {
                     // Particle fields use underscores. The AQI fields the plan
                     // tells us to ignore use dots. Both are valid JSON keys.
                     float a = NAN, b = NAN, rh = NAN;
@@ -155,9 +180,16 @@ script:
                       id(sensor_humidity).publish_state(rh);
                     }
 
-                    // All three come from the same payload or we compute nothing.
-                    if (std::isnan(a) || std::isnan(b) || std::isnan(rh))
-                      return true;
+                    // All three come from the same payload or we compute
+                    // nothing, and a payload we cannot compute from is a failed
+                    // poll rather than a quiet no-op.
+                    if (std::isnan(a) || std::isnan(b) || std::isnan(rh)) {
+                      ESP_LOGW("ashlight", "Payload missing pm2_5_cf_1, pm2_5_cf_1_b or current_humidity");
+                      return false;
+                    }
+
+                    // Only now has the poll actually produced a reading.
+                    id(consecutive_failures) = 0;
 
                     // Step 1: mean of the two cf_1 channels. Not atm.
                     float avg = (a + b) / 2.0f;
@@ -257,22 +289,15 @@ script:
                     call.set_transition_length(3000);
                     call.perform();
                     return true;
-                  });
+                  })) {
+                    id(note_poll_failure).execute();
+                  }
           on_error:
             then:
+              # http_request already logs the underlying reason, eg
+              # ESP_ERR_HTTP_CONNECT, so there is nothing to add here.
               - lambda: |-
-                  id(consecutive_failures)++;
-                  ESP_LOGW("ashlight", "PurpleAir fetch failed (%d consecutive)",
-                           id(consecutive_failures));
-                  if (id(consecutive_failures) >= ${fail_threshold}) {
-                    // Follow the same day/night schedule. A rotating pattern at
-                    // daytime output at 3am is worse than the reading it replaced.
-                    float bright = (id(sun_state).state == "above_horizon") ? ${bright_day}f : ${bright_night}f;
-                    auto call = id(ring).turn_on();
-                    call.set_effect("Sensor Offline");
-                    call.set_brightness(bright);
-                    call.perform();
-                  }
+                  id(note_poll_failure).execute();
 
 interval:
   # 2 minutes matches the sensor's own averaging window. Faster gains nothing.
