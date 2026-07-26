@@ -13,6 +13,23 @@ earns its keep.
 
 Built with [ESPHome](https://esphome.io/). The entire device is one YAML file.
 
+> **Home Assistant is required.** The lamp reads `sun.sun` from Home Assistant to
+> decide whether it is day or night, and that drives the brightness schedule.
+> Without it the ring will still poll and show the correct colour, but it will
+> sit at night brightness around the clock, which is too dim to read in daylight.
+> Any Home Assistant install works, including Home Assistant Container. No
+> add-ons are needed. See [Home Assistant](#home-assistant) below, including how
+> to drop the dependency if you would rather not run it.
+
+---
+
+## Requirements
+
+- A **PurpleAir PA-II** on your LAN, reachable by IP.
+- **Home Assistant**, reachable on the same LAN. See the note above.
+- **ESPHome** on a machine you can flash from. No dashboard needed.
+- The hardware below.
+
 ---
 
 ## What it looks like in use
@@ -215,6 +232,8 @@ quality does not move that fast.
 
 ## Home Assistant
 
+**Required.** The brightness schedule depends on it.
+
 The device is discovered over the network via the ESPHome API. Nothing needs to
 be installed on the Home Assistant side, and the ESPHome add-on is not required.
 This runs fine against Home Assistant Container, where add-ons do not exist.
@@ -236,9 +255,29 @@ laser counters, and comparing them is how you notice one degrading. If channel A
 and channel B drift apart over weeks, one of them is dying. PurpleAir sells
 socketed replacements.
 
-**One Home Assistant dependency:** the brightness schedule reads `sun.sun`. If
-you are not running Home Assistant, replace that `text_sensor` with ESPHome's
-own `sun` component and your coordinates, or with a `time`-based condition.
+### What depends on Home Assistant, and how to drop it
+
+Exactly one thing: the `sun_state` text sensor reads `sun.sun`, and every
+brightness decision in the config tests it. Three places do this, all with the
+same expression:
+
+```cpp
+id(sun_state).state == "above_horizon" ? ${bright_day}f : ${bright_night}f
+```
+
+If Home Assistant is absent or has not connected yet, that state is an empty
+string and the test falls through to the night value. That is deliberate: erring
+dim at boot is the right way round for an object that sits in a room. But it
+also means a lamp with no Home Assistant is a permanently dim lamp.
+
+To run without Home Assistant, replace the `text_sensor` block with ESPHome's
+own [`sun`](https://esphome.io/components/sun.html) component and your
+coordinates, then change those three expressions to test it. Note that this puts
+your latitude and longitude in the config file, which is the reason this build
+reads the sun from Home Assistant instead.
+
+A `time`-based schedule works too and needs no coordinates, at the cost of not
+tracking the seasons.
 
 ---
 
