@@ -136,13 +136,48 @@ established connection carrying a trickle of data survives a lossy link; a fresh
 TCP handshake, which needs several round trips to land in order, does not.
 
 If polls fail while the device is plainly online, check RSSI before suspecting
-the sensor or the config. The `RSSI` sensor is published to Home Assistant for
-exactly this reason.
+the config, but do not stop there. See "when it is not the WiFi" below, because
+a slow sensor produces a similar-looking result for an entirely different reason.
 
-There is no configuration that fixes an out-of-range location. `power_save_mode`
-and 802.11k/v are both in this config and neither recovered a -77 dBm link. Site
-it within reach of an access point, or accept that it will sit in the offline
-pattern.
+No wifi option rescues an out-of-range location. `power_save_mode` and 802.11k/v
+are both in this config and neither recovered a -77 dBm link.
+
+#### The antenna mod
+
+The onboard ceramic antenna is the limiting factor, and a 31mm wire soldered to
+the antenna feed is a well-travelled fix. 31mm is a quarter wavelength at
+2.4 GHz. On this build it was worth about **4 dB**: mean -72.7 dBm over 147
+samples in a location that previously measured -72 to -81.
+
+Two honest caveats. First, an early 20 minute sample suggested 8 dB, and the
+longer run did not support it. RSSI in one room spanned 14 dB across a morning,
+so judge a location on hours of samples, not minutes. Second, 4 dB is real but
+it is not transformative, and it did not turn out to be what was blocking the
+polls in that room.
+
+#### When it is not the WiFi
+
+Weak signal and a slow sensor both show up as failed fetches, and they are worth
+telling apart before you start moving furniture.
+
+- **Weak signal** fails *fast*. `Code: -1` arrives well inside the timeout,
+  because the TCP handshake never completes.
+- **A slow sensor** fails at exactly the timeout. The request runs the full
+  10000 ms and then gives up, because the sensor is going to answer, just not
+  in time.
+
+The second one is common. The PA-II is a single-threaded ESP8266 that uploads to
+its own cloud service every 120 seconds and cannot serve its local web server
+while it does. Measured from a wired host: responses of 0.1s, 6.5s, 11.4s and
+13.2s, plus outright drops, all from a sensor whose own RSSI was -50 dBm. Nothing
+on the ESP32 side can fix that.
+
+This is why the poll interval is roughly 6 minutes and jittered rather than a
+flat 2. Two unsynchronised 120 second cycles drift slowly against each other, so
+the failures do not scatter, they arrive in long runs. A 2h29m capture caught 55
+consecutive successes followed by 18 consecutive failures with one clean
+transition and no reboot. A fresh random offset every cycle keeps the two cycles
+from settling into phase, and cuts request load on the sensor at the same time.
 
 ### A note on USB cables
 

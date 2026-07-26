@@ -178,10 +178,14 @@ all afternoon. An ambient display should be calm; that is the entire point of th
 object.
 
 Phase 5 solved this with the gradient rather than with an overshoot threshold. A
-continuous color cannot flip, so what remains is a 16 minute moving average on
-the corrected concentration, which is the 15 to 30 minute window called for here.
-If the gradient is ever reverted to discrete steps, the overshoot requirement
-comes back with it.
+continuous color cannot flip, so what remains is a moving average on the
+corrected concentration, roughly 18 minutes. If the gradient is ever reverted to
+discrete steps, the overshoot requirement comes back with it.
+
+The window is `window_size: 3` and is counted in **samples**, so its length in
+minutes is whatever the poll interval makes it. It was 8 samples at a 2 minute
+poll, also about 16 to 18 minutes. Change the poll interval and this number has
+to move with it or the lamp goes sluggish.
 
 **Smooth in the right order.** Average the corrected concentration, then compute
 AQI from that average. Do not average AQI values. The concentration-to-AQI mapping
@@ -201,5 +205,23 @@ This covers the window between power-on and the first successful poll, which is 
 to a full poll interval. Show the failure state during it. Not black, and not a
 default color that could be read as a valid measurement.
 
-**Poll interval.** 2 minutes matches the sensor's own averaging window. Faster
-gains nothing.
+**Poll interval.** Roughly 6 minutes, jittered to land 5 to 7 minutes apart.
+Deliberately not 2, and the jitter is the point.
+
+2 minutes matched the sensor's own averaging window, which was the original
+reasoning and is why the config said 2 for six phases. It turned out to be the
+wrong number for a different reason. The PA-II is a single-threaded ESP8266 that
+uploads to its own cloud every 120 seconds and cannot serve the local web server
+while it does. Two unsynchronised 120 second cycles drift slowly against each
+other, so the failures did not scatter, they arrived in long runs. Measured
+2026-07-26 over 2h29m: 55 consecutive successes, then 18 consecutive failures,
+one clean transition, no reboot. A fresh random offset every cycle means the two
+cycles can never settle into phase.
+
+Freshness is not the constraint. This is an ambient lamp, not instrumentation.
+Slower also cuts the request load on a sensor that is visibly struggling to
+answer, from about 720 a day to 230.
+
+**Anything counted in polls has to be rescaled when the interval moves.** Both
+the moving average window and the failure threshold are in samples, not minutes,
+so slowing the poll silently stretches them. See the two settings above.

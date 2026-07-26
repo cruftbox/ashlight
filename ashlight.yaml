@@ -36,17 +36,33 @@ substitutions:
   sensor_ip: "192.168.4.25"
 
   # Consecutive failed polls before the ring gives up and shows the offline
-  # pattern. At a 2 minute interval, 10 is 20 minutes of nothing. Air quality
-  # does not move fast enough for a stale 20 minute reading to mislead, and the
-  # PurpleAir goes unreachable often enough that a lower threshold made the ring
-  # flip into the offline pattern during ordinary operation.
-  fail_threshold: "10"
+  # pattern. Counted in polls, so its meaning in minutes moves with the poll
+  # interval: 4 polls at roughly 6 minutes apart is about 24 minutes of nothing.
+  # Air quality does not move fast enough for a stale 24 minute reading to
+  # mislead, and the PurpleAir drops requests often enough that a tighter
+  # threshold would flip the ring into the offline pattern during ordinary
+  # operation. Was 10 when the interval was 2 minutes, which was the same 20 odd
+  # minutes; do not read the drop from 10 to 4 as a tightening.
+  fail_threshold: "4"
 
   # Ring brightness, 0.0 to 1.0. Tune these rather than the lambdas.
-  # Below about 0.04 the 8-bit channels get coarse and mixed hues start to
-  # band, so the gradient degrades before the light does.
-  bright_day: "0.45"
-  bright_night: "0.06"
+  #
+  # 0.03 is the practical night floor, not an aesthetic choice. Brightness is a
+  # scale factor applied to the 8-bit channels, and gamma_correct is 1.0, so a
+  # low value leaves very few levels to carry a mixed hue. At 0.03 the channels
+  # land near 8/255 and every anchor still reads as itself. Below that they
+  # collapse in a way that puts out wrong information:
+  #
+  #   0.02   Hazardous #7E0023 loses its blue channel and reads as dark red.
+  #   0.004  the 1/255 floor. Each channel is 0 or 1, so the six anchors
+  #          collapse to primaries: #FF7E00 renders as pure red, one category
+  #          hotter than the air, and #7E0023 renders as off.
+  #
+  # If 0.03 is still too bright, the fix is fewer lit pixels rather than a
+  # smaller number here. Total output falls with the pixel count while each lit
+  # pixel keeps its full 8 bits.
+  bright_day: "0.15"
+  bright_night: "0.03"
 
 esphome:
   name: ashlight
@@ -359,9 +375,27 @@ script:
                   id(note_poll_failure).execute();
 
 interval:
-  # 2 minutes matches the sensor's own averaging window. Faster gains nothing.
-  - interval: 2min
+  # Roughly every 6 minutes, deliberately jittered, deliberately not 2.
+  #
+  # The PA-II is a single-threaded ESP8266 that uploads to its own cloud every
+  # 120 seconds and cannot serve the local web server while it does. Polling on
+  # a 2 minute interval put two unsynchronised 120 second cycles against each
+  # other, and because the relative phase drifts slowly the result was not
+  # evenly scattered misses but long runs of one state and then the other.
+  # Measured 2026-07-26 over 2h29m: 55 consecutive successes, then 18
+  # consecutive failures, one clean transition and no reboot in between.
+  #
+  # The jitter is the point, not the 6 minutes. A fresh offset every cycle means
+  # consecutive polls land 5 to 7 minutes apart and the two cycles can never
+  # settle into phase. Slower also cuts the load on a sensor that is visibly
+  # struggling to answer, from about 720 requests a day to 230.
+  #
+  # delay is asynchronous in ESPHome, so this does not block the main loop.
+  # Anything counted in polls rather than minutes has to be rescaled to match:
+  # see fail_threshold above and window_size on pm25_corrected below.
+  - interval: 6min
     then:
+      - delay: !lambda "return random_uint32() % 60000;"
       - script.execute: poll_purpleair
 
 sensor:
@@ -410,12 +444,15 @@ sensor:
     state_class: measurement
     update_interval: never
     filters:
-      # 8 samples at one poll every 2 minutes is a 16 minute window, inside the
-      # 15 to 30 minutes the plan calls for. This is the only damping in the
-      # system: the colour gradient is continuous, so there is no category to
-      # apply hysteresis to.
+      # The window is counted in samples, so its length in minutes is set by the
+      # poll interval. 3 samples at roughly 6 minutes apart is about 18 minutes,
+      # which is close to the 16 this had when it was 8 samples at 2 minutes.
+      # Leaving it at 8 after slowing the poll would have made it a 48 minute
+      # time constant, sluggish exactly during a smoke event when the lamp most
+      # needs to move. This is the only damping in the system: the colour
+      # gradient is continuous, so there is no category to apply hysteresis to.
       - sliding_window_moving_average:
-          window_size: 8
+          window_size: 3
           send_every: 1
 
   # This is ours, computed from the corrected concentration. It is deliberately
