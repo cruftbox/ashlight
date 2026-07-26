@@ -81,6 +81,14 @@ http_request:
   useragent: esphome/ashlight
   timeout: 10s
 
+  # ESP-IDF's HTTP client blocks the main loop, and the task watchdog is 5s.
+  # http_request's own default timeout is 4.5s, deliberately just under it;
+  # raising timeout to 10s above crossed that line silently and the device
+  # panicked and rebooted whenever the PA-II was slow. This raises the watchdog
+  # for the duration of the request only. WatchdogManager is RAII, so the 5s
+  # default is restored the moment the fetch returns.
+  watchdog_timeout: 15s
+
 globals:
   # The PA-II drops requests routinely: measured 7.2s, timeout, 4.1s, 0.1s over
   # four consecutive tries. A single miss is normal and must not change what the
@@ -185,28 +193,30 @@ script:
                         }
                       }
                     }
-                    id(aqi_corrected).publish_state(roundf(aqi));
+                    float aqi_out = roundf(aqi);
+                    id(aqi_corrected).publish_state(aqi_out);
 
                     // Gradient anchors. The pure EPA colour sits at the MIDPOINT
                     // of each category, so a category reads as itself when you
                     // are solidly inside it and a boundary reads as a 50/50 mix.
                     // Below the first anchor and above the last, the colour is
-                    // flat rather than extrapolated.
-                    static const float  AQ[7] = {0.0f, 25.0f, 75.0f, 125.0f, 175.0f, 250.0f, 400.0f};
-                    static const float  CR[7] = {0.00f, 0.00f, 1.00f, 1.00f, 1.00f, 0.561f, 0.494f};
-                    static const float  CG[7] = {0.894f, 0.894f, 1.00f, 0.494f, 0.00f, 0.247f, 0.00f};
-                    static const float  CB[7] = {0.00f, 0.00f, 0.00f, 0.00f, 0.00f, 0.592f, 0.137f};
+                    // flat rather than extrapolated, which is what the two guard
+                    // branches below do.
+                    static const float AQ[6] = {25.0f, 75.0f, 125.0f, 175.0f, 250.0f, 400.0f};
+                    static const float CR[6] = {0.00f, 1.00f, 1.00f, 1.00f, 0.561f, 0.494f};
+                    static const float CG[6] = {0.894f, 1.00f, 0.494f, 0.00f, 0.247f, 0.00f};
+                    static const float CB[6] = {0.00f, 0.00f, 0.00f, 0.00f, 0.592f, 0.137f};
 
                     // Named outR/outG/outB because a and b are already the two
                     // channel readings in this scope.
                     float outR, outG, outB;
                     if (aqi <= AQ[0]) {
                       outR = CR[0]; outG = CG[0]; outB = CB[0];
-                    } else if (aqi >= AQ[6]) {
-                      outR = CR[6]; outG = CG[6]; outB = CB[6];
+                    } else if (aqi >= AQ[5]) {
+                      outR = CR[5]; outG = CG[5]; outB = CB[5];
                     } else {
                       int k = 0;
-                      while (k < 6 && aqi > AQ[k + 1])
+                      while (k < 5 && aqi > AQ[k + 1])
                         k++;
                       float t = (aqi - AQ[k]) / (AQ[k + 1] - AQ[k]);
                       outR = CR[k] + t * (CR[k + 1] - CR[k]);
@@ -221,10 +231,18 @@ script:
                     float bright = (id(sun_state).state == "above_horizon") ? ${bright_day}f : ${bright_night}f;
 
                     ESP_LOGI("ashlight", "AQI %.0f  corrected %.2f  smoothed %.2f  rgb %.2f/%.2f/%.2f  bright %.2f",
-                             roundf(aqi), corrected, smoothed, outR, outG, outB, bright);
+                             aqi_out, corrected, smoothed, outR, outG, outB, bright);
+
+                    // Clearing the offline effect and fading to the new colour
+                    // have to be two separate calls. A call that carries an
+                    // effect silently discards its own transition, so the
+                    // single-call form logged "effect cannot be used with
+                    // transition/flash" and snapped instead of fading.
+                    auto stop = id(ring).turn_on();
+                    stop.set_effect("None");
+                    stop.perform();
 
                     auto call = id(ring).turn_on();
-                    call.set_effect("None");
                     call.set_rgb(outR, outG, outB);
                     call.set_brightness(bright);
                     call.set_transition_length(3000);
