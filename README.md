@@ -115,6 +115,35 @@ Use GPIO3, 4, 5 or 10 for the data line. This config uses **GPIO3**.
 Avoid GPIO2, GPIO8 and GPIO9. They are strapping pins sampled at boot. GPIO8
 typically also drives the onboard LED on these clones.
 
+### WiFi range, and where you can actually put this
+
+Plan for this before you pick a location. The SuperMini's onboard ceramic
+antenna is significantly worse than the phone or laptop you will instinctively
+use to judge coverage. A spot where your phone shows full bars can still be
+unusable for this board.
+
+Measured on this build, same access point in both cases:
+
+| RSSI | Behaviour |
+|---|---|
+| -32 to -35 dBm | 0% packet loss, every poll succeeds |
+| -72 to -81 dBm | 33 to 40% packet loss, **zero** polls succeed |
+
+The failure mode at the low end is worth recognising, because it does not look
+like "no WiFi". The device stays associated, answers pings, and holds an open
+ESPHome API connection, while every HTTP fetch fails with `Code: -1`. An
+established connection carrying a trickle of data survives a lossy link; a fresh
+TCP handshake, which needs several round trips to land in order, does not.
+
+If polls fail while the device is plainly online, check RSSI before suspecting
+the sensor or the config. The `RSSI` sensor is published to Home Assistant for
+exactly this reason.
+
+There is no configuration that fixes an out-of-range location. `power_save_mode`
+and 802.11k/v are both in this config and neither recovered a -77 dBm link. Site
+it within reach of an access point, or accept that it will sit in the offline
+pattern.
+
 ### A note on USB cables
 
 A known batch of SuperMini clones ships without the USB-C CC pulldown resistors.
