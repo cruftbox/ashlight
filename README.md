@@ -1,0 +1,356 @@
+# Ashlight
+
+An ambient lamp that shows outdoor air quality as a colour.
+
+It polls a PurpleAir PA-II on the local network, applies the EPA's own
+correction for PurpleAir sensors, computes AQI against the 2024 breakpoints, and
+renders the result on a 16-LED ring. There is no cloud service, no API key, and
+no dependency on anything outside your LAN. If your internet drops, the lamp
+keeps working.
+
+It is named for what it warns about. Ash falling during smoke season is when it
+earns its keep.
+
+Built with [ESPHome](https://esphome.io/). The entire device is one YAML file.
+
+---
+
+## What it looks like in use
+
+The ring shows a continuous colour gradient, not six discrete steps.
+
+| AQI | Colour | Category |
+|---|---|---|
+| 25 | `#00E400` green | Good |
+| 75 | `#FFFF00` yellow | Moderate |
+| 125 | `#FF7E00` orange | Unhealthy for Sensitive Groups |
+| 175 | `#FF0000` red | Unhealthy |
+| 250 | `#8F3F97` purple | Very Unhealthy |
+| 400 | `#7E0023` maroon | Hazardous |
+
+Those are anchors at the **midpoint** of each EPA category, and the ring
+interpolates between them. AQI 25 is pure green, AQI 75 is pure yellow, and the
+50/51 category boundary is a 50/50 yellow-green. Below 25 and above 400 the
+colour is flat rather than extrapolated.
+
+Anchoring at midpoints rather than at category edges means a category reads as
+itself when you are solidly inside it, while still showing proximity to the next
+one. It also means the lamp can never flicker between two categories, which
+matters because most houses sit near a boundary most of the time. An ambient
+display should be calm; that is the entire point of the object.
+
+**Brightness** follows a day/night schedule, read from Home Assistant's sun
+entity so no coordinates live in the config.
+
+**When the sensor is unreachable**, the ring shows three rotating red/green/blue
+segments instead of a colour. It moves, it shows three colours at once, and blue
+appears nowhere in the AQI palette, so it cannot be mistaken for a reading. This
+is also what shows from power-on until the first successful poll.
+
+---
+
+## Hardware
+
+| Item | Notes |
+|---|---|
+| ESP32-C3 SuperMini | Generic clone. Raw GPIO numbers on the silkscreen. |
+| WS2812B ring, 16 LED, 45 mm | Confirm DI/DO direction before soldering. |
+| 330 Ω resistor | Goes at the **ring** end of the data run. |
+| 1000 µF electrolytic, 6.3 V or better | Across 5 V/GND close to the ring. |
+| 5 V USB supply, 2 A | Headroom against brownout resets. |
+| Wire, heat shrink, USB-A-to-C cable | See the note on cables below. |
+| PurpleAir PA-II | On your LAN, reachable by IP. |
+
+Total cost is dominated by the PurpleAir. Everything else is a few dollars.
+
+### Wiring
+
+```
+ESP32-C3 SuperMini                          16 x WS2812B ring
+
+        5V  ─────────────────────────────────  5V ──┐
+                                                    ├─ 1000 µF
+        GND ─────────────────────────────────  GND ─┘   (stripe to GND)
+
+        GPIO3 ──────────────────[330Ω]───────  DI
+                                    └─ at the ring end
+```
+
+Four connections. Three things about them are easy to get wrong:
+
+**The 330 Ω goes at the ring end, not the MCU end.** It is on the data line, not
+the power line, and it does not drop the supply. Its jobs are damping the
+reflection off an unterminated wire, and limiting current through the first
+pixel's ESD protection if the board drives data before the ring's 5 V has come
+up. Both require it close to DI. This is the
+[Adafruit NeoPixel Überguide](https://learn.adafruit.com/adafruit-neopixel-uberguide)
+recommendation.
+
+**Do not put a resistor in series with the ring's supply.** Each WS2812B has
+constant-current drivers built into the package. There is no LED current to
+limit.
+
+**The capacitor's stripe is negative** and goes to GND. An electrolytic fitted
+backwards will vent.
+
+### Pin choice
+
+Use GPIO3, 4, 5 or 10 for the data line. This config uses **GPIO3**.
+
+Avoid GPIO2, GPIO8 and GPIO9. They are strapping pins sampled at boot. GPIO8
+typically also drives the onboard LED on these clones.
+
+### Logic level
+
+The ESP32-C3 drives 3.3 V. A 5 V WS2812B wants roughly 0.7 × VDD, about 3.5 V,
+to read a logic high. This works reliably on short runs and at moderate
+brightness, which is how the lamp is built, but it is technically out of spec.
+
+If the first pixel flickers or colours come out wrong once your wires get
+longer, that is this. Fix it with a level shifter, or drop the ring's supply
+through a series diode so its threshold comes down to meet the C3.
+
+### A note on USB cables
+
+A known batch of SuperMini clones ships without the USB-C CC pulldown resistors.
+With a C-to-C cable the board looks dead. **Use an A-to-C cable for the first
+flash.** If the flasher still cannot see it, hold BOOT, tap RESET, release BOOT.
+
+---
+
+## Build
+
+### 1. Install ESPHome
+
+```
+pip install esphome
+```
+
+Developed against ESPHome 2026.7.2. No dashboard or web flasher is needed; the
+CLI does everything.
+
+### 2. Create `secrets.yaml`
+
+Copy `secrets.yaml.example` to `secrets.yaml` and fill it in. That file is
+gitignored and must stay that way.
+
+Generate the API encryption key with `esphome wizard`, or take any 32-byte
+base64 string.
+
+### 3. Set your sensor's address
+
+In `ashlight.yaml`, under `substitutions:`:
+
+```yaml
+sensor_ip: "192.168.4.25"
+```
+
+Find your PA-II's address in your router's lease table, then confirm it with:
+
+```
+curl http://<SENSOR_IP>/json
+```
+
+You should get several KB of JSON back. If that command hangs, the sensor's
+onboard web server is not responding, and nothing downstream will work.
+
+A DHCP reservation for the sensor is worth setting up. The lamp resolves nothing
+by name on the sensor side.
+
+### 4. Flash
+
+First flash must be over USB:
+
+```
+esphome run ashlight.yaml
+```
+
+After that, over the air:
+
+```
+esphome run ashlight.yaml --device OTA
+```
+
+**Leave the device powered for a full minute after an OTA reports success.**
+ESPHome marks a boot successful after 60 seconds, and a device that resets
+before then rolls back to the previous image. This is easy to trip over while
+handling a device you are still assembling.
+
+### 5. Watch it work
+
+```
+esphome logs ashlight.yaml --device OTA
+```
+
+A successful poll logs one line:
+
+```
+[I][ashlight]: AQI 53  corrected 10.21  smoothed 10.12  rgb 0.56/0.95/0.00  bright 0.45
+```
+
+---
+
+## Configuration
+
+Everything you are likely to want to change is in the `substitutions:` block at
+the top of `ashlight.yaml`.
+
+| Key | Default | What it does |
+|---|---|---|
+| `sensor_ip` | — | Your PA-II's LAN address. |
+| `fail_threshold` | `10` | Consecutive failed polls before the ring gives up and shows the offline pattern. At a 2 minute interval, 10 is 20 minutes. |
+| `bright_day` | `0.45` | Ring brightness when the sun is up, 0.0 to 1.0. |
+| `bright_night` | `0.06` | Ring brightness after dark. |
+
+Brightness wants tuning against your particular diffuser. Below about `0.04` the
+8-bit channels get coarse and blended hues start to band, so the gradient
+degrades before the light does.
+
+`fail_threshold` is deliberately generous. The PA-II's web server drops requests
+under no particular load, and a lamp that flips to the error pattern during
+ordinary operation is worse than one showing a twenty minute old reading. Air
+quality does not move that fast.
+
+---
+
+## Home Assistant
+
+The device is discovered over the network via the ESPHome API. Nothing needs to
+be installed on the Home Assistant side, and the ESPHome add-on is not required.
+This runs fine against Home Assistant Container, where add-ons do not exist.
+
+It publishes:
+
+| Entity | Notes |
+|---|---|
+| `AQI` | Computed here, not the sensor's own. |
+| `PM2.5 Corrected` | Output of the Barkjohn correction, after smoothing. |
+| `PM2.5 CF1 Channel A` | Raw channel A. |
+| `PM2.5 CF1 Channel B` | Raw channel B. |
+| `Sensor Humidity` | From the PA-II's onboard BME280. |
+| `RSSI` | WiFi signal. |
+| `Ring` | The light itself. |
+
+The two PM2.5 channels are published separately on purpose. A PurpleAir has two
+laser counters, and comparing them is how you notice one degrading. If channel A
+and channel B drift apart over weeks, one of them is dying. PurpleAir sells
+socketed replacements.
+
+**One Home Assistant dependency:** the brightness schedule reads `sun.sun`. If
+you are not running Home Assistant, replace that `text_sensor` with ESPHome's
+own `sun` component and your coordinates, or with a `time`-based condition.
+
+---
+
+## The AQI math
+
+The lamp does not use the sensor's own AQI numbers. The `pm2.5_aqi`,
+`pm2.5_aqi_b`, `p25aqic` and `p25aqic_b` fields are uncorrected and use pre-2024
+breakpoints. Expect this lamp to read lower than the sensor's own display, and
+expect that to be correct.
+
+### Step 1: average the channels
+
+Mean of `pm2_5_cf_1` and `pm2_5_cf_1_b`. The `cf_1` values, not `atm`.
+
+### Step 2: the Barkjohn correction
+
+```
+corrected = 0.524 × pm2_5_cf_1_avg − 0.0862 × humidity + 5.75
+```
+
+Clamped at 0. This is the US EPA's nationwide correction for PurpleAir sensors,
+derived by Barkjohn et al. It matters most exactly when it matters most, which
+is during wildfire smoke.
+
+Use the sensor's humidity **raw**. The PA-II's own enclosure bias is already
+baked into the fitted equation, so "correcting" humidity first makes the output
+worse. The temperature field does read about 8 °F high, but temperature is not
+an input here, so it does not matter.
+
+This form is validated to roughly 343 µg/m³. There is a piecewise extension for
+higher concentrations that this config does not implement.
+
+### Step 3: smooth the concentration
+
+An 8-sample moving average at one poll every 2 minutes, so a 16 minute window.
+
+**Smooth the concentration, then compute AQI. Never the reverse.** The
+concentration-to-AQI mapping is piecewise linear, so the mean of two AQI values
+that straddle a breakpoint is not the AQI of the mean concentration.
+
+### Step 4: 2024 EPA breakpoints
+
+Standard piecewise linear interpolation:
+
+```
+AQI = (AQI_hi − AQI_lo) / (C_hi − C_lo) × (C − C_lo) + AQI_lo
+```
+
+| Concentration (µg/m³) | AQI | Category |
+|---|---|---|
+| 0.0 – 9.0 | 0 – 50 | Good |
+| 9.1 – 35.4 | 51 – 100 | Moderate |
+| 35.5 – 55.4 | 101 – 150 | Unhealthy for Sensitive Groups |
+| 55.5 – 125.4 | 151 – 200 | Unhealthy |
+| 125.5 – 225.4 | 201 – 300 | Very Unhealthy |
+| 225.5 – 325.4 | 301 – 500 | Hazardous |
+
+These are the May 2024 revised breakpoints. The older table put the
+Good/Moderate boundary at 12.0 rather than 9.0. **If you find yourself writing
+12.0, you have the wrong table.**
+
+Concentration is truncated to one decimal before lookup, which is what closes
+the gap between a band's top value and the next band's base. Above 325.4, AQI is
+clamped at 500.
+
+### Worked example
+
+From a real payload: channels of 16.51 and 10.23, humidity 28%.
+
+- Average: 13.37
+- Corrected: 10.3 µg/m³
+- AQI: **53**, Moderate
+
+The sensor's own display read 61 for the same moment. That difference is
+expected and correct.
+
+---
+
+## Enclosure
+
+Not included here. The lamp is a ring, so any translucent diffuser over a 45 mm
+ring will do.
+
+If you adapt one of the Printables LED ring cases, note that most are cut for a
+D1 mini and the controller cavity needs a remix for the SuperMini's 22.5 × 18 mm
+footprint. Budget space for the 1000 µF capacitor, which is the largest single
+object in the build and is easy to forget when you are sizing a pocket for the
+board.
+
+White PLA scatters hard and hides the individual LEDs but eats output.
+Translucent transmits more and tends to show each LED as a hotspot. Either way,
+retune `bright_day` and `bright_night` once you have a part you are happy with.
+
+---
+
+## Repository layout
+
+| File | |
+|---|---|
+| `ashlight.yaml` | The entire device. |
+| `secrets.yaml.example` | Template for the credentials file. |
+| `PLAN.md` | Design notes and the phased build order. |
+| `CLAUDE.md` | Working notes and constraints. |
+
+`secrets.yaml` is gitignored and must stay out of the repository.
+
+One privacy note if you publish anything about your own build: **the PurpleAir
+JSON payload contains precise latitude and longitude.** Scrub it from pasted
+output, screenshots and any sample data you commit.
+
+---
+
+## License
+
+MIT. See `LICENSE`.

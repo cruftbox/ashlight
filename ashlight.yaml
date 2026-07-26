@@ -1,5 +1,21 @@
-# Ashlight - Phase 5: behavior.
-# Everything from Phases 1 to 4 plus the ring actually reflecting the air.
+# Ashlight: an ambient air quality lamp.
+#
+# Polls a PurpleAir PA-II on the local network every 2 minutes, applies the
+# Barkjohn/EPA correction, computes AQI against the 2024 EPA breakpoints, and
+# shows the result as a colour on a 16-LED WS2812B ring. No cloud services, no
+# API keys, nothing outside the LAN.
+#
+# The pipeline, in order, because the order matters:
+#
+#   1. Average the two PM2.5 cf_1 channels from the sensor.
+#   2. Correct with Barkjohn using the sensor's own humidity.
+#   3. Smooth the CORRECTED CONCENTRATION over a 16 minute window.
+#   4. Compute AQI from that smoothed concentration.
+#   5. Map AQI to a colour on a continuous gradient.
+#
+# Steps 3 and 4 must not be swapped. The concentration-to-AQI mapping is
+# piecewise linear, so the mean of two AQI values straddling a breakpoint is not
+# the AQI of the mean concentration.
 #
 # Colour is a continuous gradient rather than six discrete steps. The pure EPA
 # colour sits at the MIDPOINT of each category and blends toward the next one
@@ -7,9 +23,11 @@
 # reads as a 50/50 mix. AQI 49 and AQI 51 therefore look nearly identical,
 # which they should, because the air is nearly identical.
 #
-# That also replaces category hysteresis. A continuous colour has no category
-# to flip between, so the only thing that needs damping is the input, which is
-# handled by a moving average on the corrected concentration.
+# That gradient is also what removes the need for category hysteresis. A
+# continuous colour has no category to flip between, so the only thing that
+# needs damping is the input, handled by the moving average in step 3.
+#
+# See README.md for wiring, build and configuration.
 
 substitutions:
   # Not a secret, just site config. A private LAN address is harmless in a
@@ -88,20 +106,24 @@ http_request:
   useragent: esphome/ashlight
   timeout: 10s
 
-  # ESP-IDF's HTTP client blocks the main loop, and the task watchdog is 5s.
-  # http_request's own default timeout is 4.5s, deliberately just under it;
-  # raising timeout to 10s above crossed that line silently and the device
-  # panicked and rebooted whenever the PA-II was slow. This raises the watchdog
-  # for the duration of the request only. WatchdogManager is RAII, so the 5s
-  # default is restored the moment the fetch returns.
+  # Required, and it must stay above the timeout above.
+  #
+  # ESP-IDF's HTTP client blocks the main loop for the duration of a request,
+  # and the ESP32 task watchdog is 5s. http_request's own default timeout is
+  # 4.5s precisely so it stays under that. Any timeout longer than 5s therefore
+  # needs the watchdog raised to match, or a slow sensor panics the board and
+  # reboots it. This raises the watchdog for the request only; ESPHome restores
+  # the 5s default the moment the fetch returns.
+  #
+  # If you change `timeout`, change this too, and keep the margin.
   watchdog_timeout: 15s
 
 globals:
-  # The PurpleAir drops requests routinely: measured 7.2s, timeout, 4.1s, 0.1s
-  # over four consecutive tries, and on 2026-07-25 it refused connections
-  # entirely for several minutes while still answering ping. A miss is normal and
-  # must not change what the lamp shows, so the failure state waits for
-  # ${fail_threshold} in a row.
+  # The PA-II's onboard web server is slow and drops requests under no load:
+  # measured 7.2s, timeout, 4.1s, 0.1s over four consecutive tries, and it can
+  # refuse connections entirely for minutes while still answering ping. A missed
+  # poll is normal operation, not a fault, and must not change what the lamp
+  # shows. Hence the failure state waits for ${fail_threshold} misses in a row.
   - id: consecutive_failures
     type: int
     restore_value: no
@@ -115,11 +137,15 @@ text_sensor:
     entity_id: sun.sun
 
 script:
-  # Every way a poll can fail funnels through here. Previously only on_error
-  # could show the offline pattern, so a sensor answering HTTP 500, or answering
-  # 200 with a truncated or unusable body, would have incremented the counter
-  # forever while the ring held its last colour. Holding a stale colour
-  # indefinitely is the one failure behaviour the plan rules out.
+  # Every way a poll can fail funnels through here: transport error, bad HTTP
+  # status, malformed body, and a well-formed body missing the fields we need.
+  # Keeping the counter and the give-up decision in one place is what stops
+  # those paths from drifting apart, which is easy to do by accident because
+  # they live in three different callbacks.
+  #
+  # The behaviour being protected: the lamp must never hold a stale colour
+  # indefinitely. A wrong colour that looks authoritative is worse than an
+  # obvious "no data" pattern.
   - id: note_poll_failure
     then:
       - lambda: |-
@@ -163,8 +189,11 @@ script:
                   // parsed but did not carry the fields we need. A 200 with an
                   // unusable payload is a failed poll, not a successful one.
                   if (!json::parse_json(body, [](JsonObject root) -> bool {
-                    // Particle fields use underscores. The AQI fields the plan
-                    // tells us to ignore use dots. Both are valid JSON keys.
+                    // Field naming in this payload is inconsistent and it will
+                    // bite you: particle fields use underscores (pm2_5_cf_1)
+                    // while the sensor's own AQI fields use dots (pm2.5_aqi).
+                    // Both are valid JSON keys. We read only the particle
+                    // fields; see README.md for why the sensor's AQI is unused.
                     float a = NAN, b = NAN, rh = NAN;
 
                     if (root["pm2_5_cf_1"].is<float>()) {
@@ -274,11 +303,11 @@ script:
                     ESP_LOGI("ashlight", "AQI %.0f  corrected %.2f  smoothed %.2f  rgb %.2f/%.2f/%.2f  bright %.2f",
                              aqi_out, corrected, smoothed, outR, outG, outB, bright);
 
-                    // Clearing the offline effect and fading to the new colour
-                    // have to be two separate calls. A call that carries an
-                    // effect silently discards its own transition, so the
-                    // single-call form logged "effect cannot be used with
-                    // transition/flash" and snapped instead of fading.
+                    // Two calls, deliberately. ESPHome discards a transition on
+                    // any light call that also carries an effect, so clearing
+                    // the offline effect and fading to the new colour cannot be
+                    // combined. Merging them back into one call compiles fine
+                    // and silently loses the fade.
                     auto stop = id(ring).turn_on();
                     stop.set_effect("None");
                     stop.perform();
@@ -394,8 +423,8 @@ light:
     gamma_correct: 1.0
 
     effects:
-      # Shown from boot until the first successful poll, and again after three
-      # consecutive fetch failures.
+      # Shown from boot until the first successful poll, and again after
+      # ${fail_threshold} consecutive failed polls.
       #
       # Three hard-edged R/G/B segments rotating around the ring. This does
       # sweep through green and red, which do carry meaning on the AQI scale,
