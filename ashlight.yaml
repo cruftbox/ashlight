@@ -17,6 +17,13 @@ substitutions:
   # the YAML stays readable.
   sensor_ip: "192.168.4.25"
 
+  # Consecutive failed polls before the ring gives up and shows the offline
+  # pattern. At a 2 minute interval, 10 is 20 minutes of nothing. Air quality
+  # does not move fast enough for a stale 20 minute reading to mislead, and the
+  # PurpleAir goes unreachable often enough that a lower threshold made the ring
+  # flip into the offline pattern during ordinary operation.
+  fail_threshold: "10"
+
   # Ring brightness, 0.0 to 1.0. Tune these rather than the lambdas.
   # Below about 0.04 the 8-bit channels get coarse and mixed hues start to
   # band, so the gradient degrades before the light does.
@@ -90,9 +97,11 @@ http_request:
   watchdog_timeout: 15s
 
 globals:
-  # The PA-II drops requests routinely: measured 7.2s, timeout, 4.1s, 0.1s over
-  # four consecutive tries. A single miss is normal and must not change what the
-  # lamp shows, so the failure state waits for several in a row.
+  # The PurpleAir drops requests routinely: measured 7.2s, timeout, 4.1s, 0.1s
+  # over four consecutive tries, and on 2026-07-25 it refused connections
+  # entirely for several minutes while still answering ping. A miss is normal and
+  # must not change what the lamp shows, so the failure state waits for
+  # ${fail_threshold} in a row.
   - id: consecutive_failures
     type: int
     restore_value: no
@@ -255,7 +264,7 @@ script:
                   id(consecutive_failures)++;
                   ESP_LOGW("ashlight", "PurpleAir fetch failed (%d consecutive)",
                            id(consecutive_failures));
-                  if (id(consecutive_failures) >= 3) {
+                  if (id(consecutive_failures) >= ${fail_threshold}) {
                     // Follow the same day/night schedule. A rotating pattern at
                     // daytime output at 3am is worse than the reading it replaced.
                     float bright = (id(sun_state).state == "above_horizon") ? ${bright_day}f : ${bright_night}f;
