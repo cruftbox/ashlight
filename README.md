@@ -99,9 +99,7 @@ Four connections. Three things about them are easy to get wrong:
 the power line, and it does not drop the supply. Its jobs are damping the
 reflection off an unterminated wire, and limiting current through the first
 pixel's ESD protection if the board drives data before the ring's 5 V has come
-up. Both require it close to DI. This is the
-[Adafruit NeoPixel Überguide](https://learn.adafruit.com/adafruit-neopixel-uberguide)
-recommendation.
+up. Both require it close to DI.
 
 **Do not put a resistor in series with the ring's supply.** Each WS2812B has
 constant-current drivers built into the package. There is no LED current to
@@ -116,16 +114,6 @@ Use GPIO3, 4, 5 or 10 for the data line. This config uses **GPIO3**.
 
 Avoid GPIO2, GPIO8 and GPIO9. They are strapping pins sampled at boot. GPIO8
 typically also drives the onboard LED on these clones.
-
-### Logic level
-
-The ESP32-C3 drives 3.3 V. A 5 V WS2812B wants roughly 0.7 × VDD, about 3.5 V,
-to read a logic high. This works reliably on short runs and at moderate
-brightness, which is how the lamp is built, but it is technically out of spec.
-
-If the first pixel flickers or colours come out wrong once your wires get
-longer, that is this. Fix it with a level shifter, or drop the ring's supply
-through a series diode so its threshold comes down to meet the C3.
 
 ### A note on USB cables
 
