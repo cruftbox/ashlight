@@ -79,7 +79,7 @@ is also what shows from power-on until the first successful poll.
 | 330 Ω resistor | Goes at the **ring** end of the data run. |
 | 1000 µF electrolytic, 6.3 V or better | Across 5 V/GND close to the ring. |
 | 5 V USB supply, 2 A | Headroom against brownout resets. |
-| Wire, heat shrink, USB-A-to-C cable | Some boards don't like USC-C to USB-C cables|
+| Wire, heat shrink, USB-A-to-C cable | Some boards don't like USB-C to USB-C cables. |
 | PurpleAir PA-II | On your LAN, reachable by IP. |
 
 Total cost is dominated by the PurpleAir. Everything else is a few dollars.
@@ -128,7 +128,7 @@ marginal for this board.
 
 A weak link is worth recognizing because it does not look like "no WiFi". The
 device stays associated, answers pings, and holds an open ESPHome API
-connection, while every HTTP fetch fails with `Code: -1`. 
+connection, while every HTTP fetch fails with `Code: -1`.
 
 #### The antenna mod
 
@@ -139,7 +139,7 @@ a wire soldered to the antenna feed point, 31 mm being a quarter wavelength at
 silver-plated wire, 31 mm total, the bottom 16 mm bent into a horizontal loop
 about 8 mm across and the remaining 15 mm left vertical.
 
-The antenna hack worked great for this project. 
+The antenna hack worked great for this project.
 
 Neufeld's own conclusion after doing it was to buy a board with a U.FL connector
 next time and hang an external antenna off it. That is the better answer if you
