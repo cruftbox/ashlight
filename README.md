@@ -79,7 +79,7 @@ is also what shows from power-on until the first successful poll.
 | 330 Ω resistor | Goes at the **ring** end of the data run. |
 | 1000 µF electrolytic, 6.3 V or better | Across 5 V/GND close to the ring. |
 | 5 V USB supply, 2 A | Headroom against brownout resets. |
-| Wire, heat shrink, USB-A-to-C cable | See the note on cables below. |
+| Wire, heat shrink, USB-A-to-C cable | Some boards don't like USC-C to USB-C cables|
 | PurpleAir PA-II | On your LAN, reachable by IP. |
 
 Total cost is dominated by the PurpleAir. Everything else is a few dollars.
@@ -138,6 +138,8 @@ a wire soldered to the antenna feed point, 31 mm being a quarter wavelength at
 2.4 GHz. The geometry is more particular than "a straight wire": 1.0 mm
 silver-plated wire, 31 mm total, the bottom 16 mm bent into a horizontal loop
 about 8 mm across and the remaining 15 mm left vertical.
+
+The antenna hack worked great for this project. 
 
 Neufeld's own conclusion after doing it was to buy a board with a U.FL connector
 next time and hang an external antenna off it. That is the better answer if you
@@ -413,7 +415,7 @@ expected and correct.
 
 ## Enclosure
 
-[Here as the STLs of the enclosure I designed](https://www.thingiverse.com/thing:7388508). The lamp is a ring, so any translucent diffuser over a 45 mm
+[Here are the STLs of the enclosure I designed](https://www.thingiverse.com/thing:7388508). The lamp is a ring, so any translucent diffuser over a 45 mm
 ring will do.
 
 The one in the photo above is a custom design, drawn in Tinkercad rather than
