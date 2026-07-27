@@ -34,7 +34,11 @@ Built with [ESPHome](https://esphome.io/). The entire device is one YAML file.
 
 ## What it looks like in use
 
-The ring shows a continuous color gradient, not six discrete steps.
+![The lamp on a side table at night, its ring glowing green through a translucent
+printed lid, with the sixteen LEDs visible as distinct points](docs/ashlight.jpg)
+
+Green, so the air was good that evening. The ring shows a continuous color
+gradient, not six discrete steps.
 
 | AQI | Color | Category |
 |---|---|---|
@@ -436,13 +440,16 @@ expected and correct.
 Not included here. The lamp is a ring, so any translucent diffuser over a 45 mm
 ring will do.
 
-If you adapt one of the Printables LED ring cases, note that most are cut for a
-D1 mini and the controller cavity needs a remix for the SuperMini's 22.5 × 18 mm
-footprint. Budget space for the 1000 µF capacitor, which is the largest single
-object in the build and is easy to forget when you are sizing a pocket for the
-board.
+The one in the photo above is a custom design, drawn in Tinkercad rather than
+remixed: a cylindrical body with a friction-fit lid and a cutout for USB-C. The
+off-the-shelf LED ring cases are cut for a D1 mini, and the controller cavity is
+the wrong shape for the SuperMini's 22.5 × 18 mm footprint. Budget space for the
+1000 µF capacitor too, which is the largest single object in the build and is
+easy to forget when you are sizing a pocket for the board.
 
-White PLA scatters hard and hides the individual LEDs but eats output.
+It is printed in glow-in-the-dark PLA, which was the closest translucent
+filament to hand and diffuses well enough to read the ring through the lid.
+White PLA scatters harder and hides the individual LEDs but eats output.
 Translucent transmits more and tends to show each LED as a hotspot. Either way,
 retune `bright_day` and `bright_night` once you have a part you are happy with.
 
