@@ -352,6 +352,9 @@ The lamp does not use the sensor's own AQI numbers. The `pm2.5_aqi`,
 breakpoints. Expect this lamp to read lower than the sensor's own display, and
 expect that to be correct.
 
+<details>
+<summary>The four steps in full, with the breakpoint table and a worked example</summary>
+
 ### Step 1: average the channels
 
 Mean of `pm2_5_cf_1` and `pm2_5_cf_1_b`. The `cf_1` values, not `atm`.
@@ -424,6 +427,8 @@ From a real payload: channels of 16.51 and 10.23, humidity 28%.
 The sensor's own display read 61 for the same moment. That difference is
 expected and correct.
 
+</details>
+
 ---
 
 ## Enclosure
@@ -449,7 +454,6 @@ retune `bright_day` and `bright_night` once you have a part you are happy with.
 |---|---|
 | `ashlight.yaml` | The entire device. |
 | `secrets.yaml.example` | Template for the credentials file. |
-| `PLAN.md` | Design notes and the phased build order. |
 | `CLAUDE.md` | Working notes and constraints. |
 
 `secrets.yaml` is gitignored and must stay out of the repository.
