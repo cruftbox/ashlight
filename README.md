@@ -254,7 +254,7 @@ esphome logs ashlight.yaml --device OTA
 A successful poll logs one line:
 
 ```
-[I][ashlight]: AQI 53  corrected 10.21  smoothed 10.12  rgb 0.56/0.95/0.00  bright 0.45
+[I][ashlight]: AQI 53  corrected 10.21  smoothed 10.12  rgb 0.56/0.95/0.00  bright 0.15
 ```
 
 ---
@@ -267,18 +267,30 @@ the top of `ashlight.yaml`.
 | Key | Default | What it does |
 |---|---|---|
 | `sensor_ip` | — | Your PA-II's LAN address. |
-| `fail_threshold` | `10` | Consecutive failed polls before the ring gives up and shows the offline pattern. At a 2 minute interval, 10 is 20 minutes. |
-| `bright_day` | `0.45` | Ring brightness when the sun is up, 0.0 to 1.0. |
-| `bright_night` | `0.06` | Ring brightness after dark. |
+| `fail_threshold` | `4` | Consecutive failed polls before the ring gives up and shows the offline pattern. At roughly 6 minutes a poll, 4 is about 24 minutes. |
+| `bright_day` | `0.15` | Ring brightness when the sun is up, 0.0 to 1.0. |
+| `bright_night` | `0.03` | Ring brightness after dark. |
 
-Brightness wants tuning against your particular diffuser. Below about `0.04` the
-8-bit channels get coarse and blended hues start to band, so the gradient
-degrades before the light does.
+Brightness wants tuning against your particular diffuser, but `0.03` is a floor
+rather than a taste. Brightness scales the 8-bit channels and `gamma_correct` is
+1.0, so a low value leaves very few levels to carry a mixed hue. At `0.03` the
+channels land near 8/255 and every anchor still reads as itself. Below that they
+collapse in a way that puts out wrong information: at `0.02` the Hazardous
+`#7E0023` loses its blue channel and reads as dark red, and at the 1/255 floor
+the anchors collapse to primaries, where `#FF7E00` renders as pure red, a
+category hotter than the air actually is.
+
+If `0.03` is still too bright for your room, light fewer pixels rather than
+lowering this. Total output falls with the pixel count while each lit pixel keeps
+its full 8 bits.
 
 `fail_threshold` is deliberately generous. The PA-II's web server drops requests
 under no particular load, and a lamp that flips to the error pattern during
-ordinary operation is worse than one showing a twenty minute old reading. Air
-quality does not move that fast.
+ordinary operation is worse than one showing a stale reading. Air quality does
+not move that fast.
+
+**It is counted in polls, not minutes.** So is the smoothing window below. If you
+change the poll interval, rescale both or they silently change meaning.
 
 ---
 
@@ -364,7 +376,13 @@ higher concentrations that this config does not implement.
 
 ### Step 3: smooth the concentration
 
-An 8-sample moving average at one poll every 2 minutes, so a 16 minute window.
+A 3-sample moving average at roughly one poll every 6 minutes, so about an 18
+minute window.
+
+The window is counted in samples, so its length in minutes is set by the poll
+interval. Leaving it at a larger sample count after slowing the poll would make
+the lamp sluggish exactly during a smoke event, which is when it most needs to
+move.
 
 **Smooth the concentration, then compute AQI. Never the reverse.** The
 concentration-to-AQI mapping is piecewise linear, so the mean of two AQI values
