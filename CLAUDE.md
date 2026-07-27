@@ -7,8 +7,8 @@ computes a corrected AQI, and displays it as a color on a 16-LED WS2812B ring.
 The ESPHome `name:` should be `ashlight`, so it appears as `esphome.ashlight` in
 Home Assistant.
 
-Read `PLAN.md` for hardware, wiring, and the phase breakdown. Follow the phases
-in order. Do not jump ahead to a full working config.
+The build is complete. `README.md` carries the hardware list, the wiring, and the
+reasoning behind the settings; read it before changing the config.
 
 ## Environment
 
@@ -97,8 +97,9 @@ belongs in substitutions, where it stays readable.
 
 Mean of `pm2_5_cf_1` and `pm2_5_cf_1_b`. Use the cf_1 values, not atm.
 
-Publish both channels as separate sensors too, so channel drift is visible. See
-the channel A note in PLAN.md.
+Publish both channels as separate sensors too, so channel drift is visible. A
+PurpleAir has two laser counters and comparing them is how you notice one
+degrading; channel A has read high since the first capture.
 
 ### Step 2: Barkjohn / EPA correction
 

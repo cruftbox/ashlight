@@ -404,8 +404,8 @@ sensor:
     update_interval: 60s
 
   # Published from the JSON lambda, never self-polled, hence update_interval
-  # never. Channels stay separate so drift between them is visible: see the
-  # channel A note in PLAN.md.
+  # never. Channels stay separate so drift between them is visible: a PurpleAir
+  # has two laser counters and comparing them is how you notice one degrading.
   - platform: template
     name: "PM2.5 CF1 Channel A"
     id: pm25_cf1_a
