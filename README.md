@@ -1,6 +1,6 @@
 # Ashlight
 
-An ambient lamp that shows outdoor air quality as a color.
+ashlight is an ambient lamp that shows outdoor air quality as a color.
 
 It polls a PurpleAir PA-II on the local network, applies the EPA's own
 correction for PurpleAir sensors, computes AQI against the 2024 breakpoints, and
@@ -8,7 +8,7 @@ renders the result on a 16-LED ring. There is no cloud service, no API key, and
 no dependency on anything outside your LAN. If your internet drops, the lamp
 keeps working.
 
-It is named for what it warns about. Ash falling during smoke season is when it
+It is named for what it warns about. Ash falling during wildfire season is when it
 earns its keep.
 
 Built with [ESPHome](https://esphome.io/). The entire device is one YAML file.
@@ -128,16 +128,7 @@ marginal for this board.
 
 A weak link is worth recognizing because it does not look like "no WiFi". The
 device stays associated, answers pings, and holds an open ESPHome API
-connection, while every HTTP fetch fails with `Code: -1`. An established
-connection carrying a trickle of data survives a lossy link; a fresh TCP
-handshake, which needs several round trips to land in order, does not.
-
-If polls fail while the device is plainly online, check RSSI before suspecting
-the config, but do not stop there. See "when it is not the WiFi" below, because
-a slow sensor produces a similar-looking result for an entirely different reason.
-
-No wifi option rescues an out-of-range location. `power_save_mode` and 802.11k/v
-are both in this config and neither recovered a -77 dBm link.
+connection, while every HTTP fetch fails with `Code: -1`. 
 
 #### The antenna mod
 
@@ -147,17 +138,6 @@ a wire soldered to the antenna feed point, 31 mm being a quarter wavelength at
 2.4 GHz. The geometry is more particular than "a straight wire": 1.0 mm
 silver-plated wire, 31 mm total, the bottom 16 mm bent into a horizontal loop
 about 8 mm across and the remaining 15 mm left vertical.
-
-On this build it was worth about **4 dB**, a mean of -72.7 dBm over 147 samples.
-Neufeld reports 6 dB and often more. Whether the gap is wire geometry, the room,
-or his figures being line of sight was never established here.
-
-Two honest caveats. First, an early 20 minute sample suggested 8 dB and the
-longer run did not support it. RSSI in one room spanned 14 dB across a morning,
-so judge a location on hours of samples, not minutes. Second, 4 dB is real but
-it is not transformative. The lamp does run reliably in the room that prompted
-the mod, but the failures that remained afterward turned out to be the sensor
-rather than the link, which is the next section.
 
 Neufeld's own conclusion after doing it was to buy a board with a U.FL connector
 next time and hang an external antenna off it. That is the better answer if you
@@ -179,19 +159,6 @@ its own cloud service every 120 seconds and cannot serve its local web server
 while it does. Measured from a wired host: responses of 0.1s, 6.5s, 11.4s and
 13.2s, plus outright drops, all from a sensor whose own RSSI was -50 dBm. Nothing
 on the ESP32 side can fix that.
-
-This is why the poll interval is roughly 6 minutes and jittered rather than a
-flat 2. Two unsynchronized 120 second cycles drift slowly against each other, so
-the failures do not scatter, they arrive in long runs. A 2h29m capture caught 55
-consecutive successes followed by 18 consecutive failures with one clean
-transition and no reboot. A fresh random offset every cycle keeps the two cycles
-from settling into phase, and cuts request load on the sensor at the same time.
-
-### A note on USB cables
-
-A known batch of SuperMini clones ships without the USB-C CC pulldown resistors.
-With a C-to-C cable the board looks dead. **Use an A-to-C cable for the first
-flash.** If the flasher still cannot see it, hold BOOT, tap RESET, release BOOT.
 
 ---
 
@@ -446,7 +413,7 @@ expected and correct.
 
 ## Enclosure
 
-Not included here. The lamp is a ring, so any translucent diffuser over a 45 mm
+[Here as the STLs of the enclosure I designed](https://www.thingiverse.com/thing:7388508). The lamp is a ring, so any translucent diffuser over a 45 mm
 ring will do.
 
 The one in the photo above is a custom design, drawn in Tinkercad rather than
