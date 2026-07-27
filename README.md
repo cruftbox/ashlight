@@ -1,6 +1,6 @@
 # Ashlight
 
-An ambient lamp that shows outdoor air quality as a colour.
+An ambient lamp that shows outdoor air quality as a color.
 
 It polls a PurpleAir PA-II on the local network, applies the EPA's own
 correction for PurpleAir sensors, computes AQI against the 2024 breakpoints, and
@@ -15,7 +15,7 @@ Built with [ESPHome](https://esphome.io/). The entire device is one YAML file.
 
 > **Home Assistant is required.** The lamp reads `sun.sun` from Home Assistant to
 > decide whether it is day or night, and that drives the brightness schedule.
-> Without it the ring will still poll and show the correct colour, but it will
+> Without it the ring will still poll and show the correct color, but it will
 > sit at night brightness around the clock, which is too dim to read in daylight.
 > Any Home Assistant install works, including Home Assistant Container. No
 > add-ons are needed. See [Home Assistant](#home-assistant) below, including how
@@ -34,9 +34,9 @@ Built with [ESPHome](https://esphome.io/). The entire device is one YAML file.
 
 ## What it looks like in use
 
-The ring shows a continuous colour gradient, not six discrete steps.
+The ring shows a continuous color gradient, not six discrete steps.
 
-| AQI | Colour | Category |
+| AQI | Color | Category |
 |---|---|---|
 | 25 | `#00E400` green | Good |
 | 75 | `#FFFF00` yellow | Moderate |
@@ -48,7 +48,7 @@ The ring shows a continuous colour gradient, not six discrete steps.
 Those are anchors at the **midpoint** of each EPA category, and the ring
 interpolates between them. AQI 25 is pure green, AQI 75 is pure yellow, and the
 50/51 category boundary is a 50/50 yellow-green. Below 25 and above 400 the
-colour is flat rather than extrapolated.
+color is flat rather than extrapolated.
 
 Anchoring at midpoints rather than at category edges means a category reads as
 itself when you are solidly inside it, while still showing proximity to the next
@@ -60,7 +60,7 @@ display should be calm; that is the entire point of the object.
 entity so no coordinates live in the config.
 
 **When the sensor is unreachable**, the ring shows three rotating red/green/blue
-segments instead of a colour. It moves, it shows three colours at once, and blue
+segments instead of a color. It moves, it shows three colors at once, and blue
 appears nowhere in the AQI palette, so it cannot be mistaken for a reading. This
 is also what shows from power-on until the first successful poll.
 
@@ -124,12 +124,12 @@ unusable for this board.
 
 Measured on this build, same access point in both cases:
 
-| RSSI | Behaviour |
+| RSSI | Behavior |
 |---|---|
 | -32 to -35 dBm | 0% packet loss, every poll succeeds |
 | -72 to -81 dBm | 33 to 40% packet loss, **zero** polls succeed |
 
-The failure mode at the low end is worth recognising, because it does not look
+The failure mode at the low end is worth recognizing, because it does not look
 like "no WiFi". The device stays associated, answers pings, and holds an open
 ESPHome API connection, while every HTTP fetch fails with `Code: -1`. An
 established connection carrying a trickle of data survives a lossy link; a fresh
@@ -145,7 +145,7 @@ are both in this config and neither recovered a -77 dBm link.
 #### The antenna mod
 
 The onboard ceramic antenna is the limiting factor, and a 31mm wire soldered to
-the antenna feed is a well-travelled fix. 31mm is a quarter wavelength at
+the antenna feed is a well-traveled fix. 31mm is a quarter wavelength at
 2.4 GHz. On this build it was worth about **4 dB**: mean -72.7 dBm over 147
 samples in a location that previously measured -72 to -81.
 
@@ -173,7 +173,7 @@ while it does. Measured from a wired host: responses of 0.1s, 6.5s, 11.4s and
 on the ESP32 side can fix that.
 
 This is why the poll interval is roughly 6 minutes and jittered rather than a
-flat 2. Two unsynchronised 120 second cycles drift slowly against each other, so
+flat 2. Two unsynchronized 120 second cycles drift slowly against each other, so
 the failures do not scatter, they arrive in long runs. A 2h29m capture caught 55
 consecutive successes followed by 18 consecutive failures with one clean
 transition and no reboot. A fresh random offset every cycle keeps the two cycles

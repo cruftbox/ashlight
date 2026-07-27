@@ -212,7 +212,7 @@ Deliberately not 2, and the jitter is the point.
 reasoning and is why the config said 2 for six phases. It turned out to be the
 wrong number for a different reason. The PA-II is a single-threaded ESP8266 that
 uploads to its own cloud every 120 seconds and cannot serve the local web server
-while it does. Two unsynchronised 120 second cycles drift slowly against each
+while it does. Two unsynchronized 120 second cycles drift slowly against each
 other, so the failures did not scatter, they arrived in long runs. Measured
 2026-07-26 over 2h29m: 55 consecutive successes, then 18 consecutive failures,
 one clean transition, no reboot. A fresh random offset every cycle means the two

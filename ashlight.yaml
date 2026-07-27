@@ -2,7 +2,7 @@
 #
 # Polls a PurpleAir PA-II on the local network every 2 minutes, applies the
 # Barkjohn/EPA correction, computes AQI against the 2024 EPA breakpoints, and
-# shows the result as a colour on a 16-LED WS2812B ring. No cloud services, no
+# shows the result as a color on a 16-LED WS2812B ring. No cloud services, no
 # API keys, nothing outside the LAN.
 #
 # The pipeline, in order, because the order matters:
@@ -11,20 +11,20 @@
 #   2. Correct with Barkjohn using the sensor's own humidity.
 #   3. Smooth the CORRECTED CONCENTRATION over a 16 minute window.
 #   4. Compute AQI from that smoothed concentration.
-#   5. Map AQI to a colour on a continuous gradient.
+#   5. Map AQI to a color on a continuous gradient.
 #
 # Steps 3 and 4 must not be swapped. The concentration-to-AQI mapping is
 # piecewise linear, so the mean of two AQI values straddling a breakpoint is not
 # the AQI of the mean concentration.
 #
-# Colour is a continuous gradient rather than six discrete steps. The pure EPA
-# colour sits at the MIDPOINT of each category and blends toward the next one
-# as AQI rises, so deep inside a category reads as that colour, and a boundary
+# Color is a continuous gradient rather than six discrete steps. The pure EPA
+# color sits at the MIDPOINT of each category and blends toward the next one
+# as AQI rises, so deep inside a category reads as that color, and a boundary
 # reads as a 50/50 mix. AQI 49 and AQI 51 therefore look nearly identical,
 # which they should, because the air is nearly identical.
 #
 # That gradient is also what removes the need for category hysteresis. A
-# continuous colour has no category to flip between, so the only thing that
+# continuous color has no category to flip between, so the only thing that
 # needs damping is the input, handled by the moving average in step 3.
 #
 # See README.md for wiring, build and configuration.
@@ -73,7 +73,7 @@ esphome:
     priority: -100
     then:
       # There is no reading yet, so show the offline state rather than black or
-      # a default colour that could be read as a measurement.
+      # a default color that could be read as a measurement.
       - light.turn_on:
           id: ring
           effect: "Sensor Offline"
@@ -126,7 +126,7 @@ wifi:
   # Know the tradeoff before keeping them: this is a swap, not an addition.
   # ESPHome disables its own post-connect roam scanning when either is set, on
   # the assumption the driver handles roaming natively. Remove both lines to get
-  # the scan-based behaviour back, which does work and did rescue this device
+  # the scan-based behavior back, which does work and did rescue this device
   # once when it reached -84 dBm.
   enable_btm: true
   enable_rrm: true
@@ -189,8 +189,8 @@ script:
   # those paths from drifting apart, which is easy to do by accident because
   # they live in three different callbacks.
   #
-  # The behaviour being protected: the lamp must never hold a stale colour
-  # indefinitely. A wrong colour that looks authoritative is worse than an
+  # The behavior being protected: the lamp must never hold a stale color
+  # indefinitely. A wrong color that looks authoritative is worse than an
   # obvious "no data" pattern.
   - id: note_poll_failure
     then:
@@ -312,10 +312,10 @@ script:
                     float aqi_out = roundf(aqi);
                     id(aqi_corrected).publish_state(aqi_out);
 
-                    // Gradient anchors. The pure EPA colour sits at the MIDPOINT
+                    // Gradient anchors. The pure EPA color sits at the MIDPOINT
                     // of each category, so a category reads as itself when you
                     // are solidly inside it and a boundary reads as a 50/50 mix.
-                    // Below the first anchor and above the last, the colour is
+                    // Below the first anchor and above the last, the color is
                     // flat rather than extrapolated, which is what the two guard
                     // branches below do.
                     static const float AQ[6] = {25.0f, 75.0f, 125.0f, 175.0f, 250.0f, 400.0f};
@@ -351,7 +351,7 @@ script:
 
                     // Two calls, deliberately. ESPHome discards a transition on
                     // any light call that also carries an effect, so clearing
-                    // the offline effect and fading to the new colour cannot be
+                    // the offline effect and fading to the new color cannot be
                     // combined. Merging them back into one call compiles fine
                     // and silently loses the fade.
                     auto stop = id(ring).turn_on();
@@ -379,7 +379,7 @@ interval:
   #
   # The PA-II is a single-threaded ESP8266 that uploads to its own cloud every
   # 120 seconds and cannot serve the local web server while it does. Polling on
-  # a 2 minute interval put two unsynchronised 120 second cycles against each
+  # a 2 minute interval put two unsynchronized 120 second cycles against each
   # other, and because the relative phase drifts slowly the result was not
   # evenly scattered misses but long runs of one state and then the other.
   # Measured 2026-07-26 over 2h29m: 55 consecutive successes, then 18
@@ -449,7 +449,7 @@ sensor:
       # which is close to the 16 this had when it was 8 samples at 2 minutes.
       # Leaving it at 8 after slowing the poll would have made it a 48 minute
       # time constant, sluggish exactly during a smoke event when the lamp most
-      # needs to move. This is the only damping in the system: the colour
+      # needs to move. This is the only damping in the system: the color
       # gradient is continuous, so there is no category to apply hysteresis to.
       - sliding_window_moving_average:
           window_size: 3
@@ -495,9 +495,9 @@ light:
       #
       # Three hard-edged R/G/B segments rotating around the ring. This does
       # sweep through green and red, which do carry meaning on the AQI scale,
-      # so it bends the "no colour that means something" rule in the plan. It
+      # so it bends the "no color that means something" rule in the plan. It
       # still cannot be misread as a valid reading: it moves, it shows three
-      # colours at once, and blue appears nowhere in the AQI palette. Motion is
+      # colors at once, and blue appears nowhere in the AQI palette. Motion is
       # the cue that matters. It also distinguishes "no data" from "unplugged",
       # which plain off would not.
       #
