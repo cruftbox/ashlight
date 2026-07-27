@@ -199,7 +199,8 @@ flash.** If the flasher still cannot see it, hold BOOT, tap RESET, release BOOT.
 
 [![Video: ashlight, air quality monitor gadget](https://img.youtube.com/vi/zc6GMxzqIRQ/maxresdefault.jpg)](https://www.youtube.com/watch?v=zc6GMxzqIRQ)
 
-A walkthrough of the build on YouTube. The steps below are the written version.
+[A walkthrough of the build on YouTube](https://www.youtube.com/watch?v=zc6GMxzqIRQ).
+The steps below are the written version.
 
 ### 1. Install ESPHome
 
