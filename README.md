@@ -172,6 +172,8 @@ second upload and collides with it for long stretches.
 
 ## Build
 
+This is a short video of the build.
+
 [![Video: ashlight, air quality monitor gadget](https://img.youtube.com/vi/zc6GMxzqIRQ/maxresdefault.jpg)](https://www.youtube.com/watch?v=zc6GMxzqIRQ)
 
 [A walkthrough of the build on YouTube](https://www.youtube.com/watch?v=zc6GMxzqIRQ).
