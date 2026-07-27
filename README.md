@@ -34,11 +34,11 @@ Built with [ESPHome](https://esphome.io/). The entire device is one YAML file.
 
 ## What it looks like in use
 
-![The lamp on a side table at night, its ring glowing green through a translucent
-printed lid, with the sixteen LEDs visible as distinct points](docs/ashlight.jpg)
+![The lamp on a side table at night, its ring glowing a pale yellow-green through
+a translucent printed lid, with the sixteen LEDs visible as distinct points](docs/ashlight.jpg)
 
-Green, so the air was good that evening. The ring shows a continuous color
-gradient, not six discrete steps.
+A pale yellow-green, which is the boundary between Good and Moderate. The ring
+shows a continuous color gradient, not six discrete steps.
 
 | AQI | Color | Category |
 |---|---|---|
@@ -124,20 +124,13 @@ typically also drives the onboard LED on these clones.
 Plan for this before you pick a location. The SuperMini's onboard ceramic
 antenna is significantly worse than the phone or laptop you will instinctively
 use to judge coverage. A spot where your phone shows full bars can still be
-unusable for this board.
+marginal for this board.
 
-Measured on this build, same access point in both cases:
-
-| RSSI | Behavior |
-|---|---|
-| -32 to -35 dBm | 0% packet loss, every poll succeeds |
-| -72 to -81 dBm | 33 to 40% packet loss, **zero** polls succeed |
-
-The failure mode at the low end is worth recognizing, because it does not look
-like "no WiFi". The device stays associated, answers pings, and holds an open
-ESPHome API connection, while every HTTP fetch fails with `Code: -1`. An
-established connection carrying a trickle of data survives a lossy link; a fresh
-TCP handshake, which needs several round trips to land in order, does not.
+A weak link is worth recognizing because it does not look like "no WiFi". The
+device stays associated, answers pings, and holds an open ESPHome API
+connection, while every HTTP fetch fails with `Code: -1`. An established
+connection carrying a trickle of data survives a lossy link; a fresh TCP
+handshake, which needs several round trips to land in order, does not.
 
 If polls fail while the device is plainly online, check RSSI before suspecting
 the config, but do not stop there. See "when it is not the WiFi" below, because
@@ -148,16 +141,27 @@ are both in this config and neither recovered a -77 dBm link.
 
 #### The antenna mod
 
-The onboard ceramic antenna is the limiting factor, and a 31mm wire soldered to
-the antenna feed is a well-traveled fix. 31mm is a quarter wavelength at
-2.4 GHz. On this build it was worth about **4 dB**: mean -72.7 dBm over 147
-samples in a location that previously measured -72 to -81.
+The onboard ceramic antenna is the limiting factor. The fix is [Peter Neufeld's
+quarter-wave mod](https://peterneufeld.wordpress.com/2025/03/04/esp32-c3-supermini-antenna-modification/),
+a wire soldered to the antenna feed point, 31 mm being a quarter wavelength at
+2.4 GHz. The geometry is more particular than "a straight wire": 1.0 mm
+silver-plated wire, 31 mm total, the bottom 16 mm bent into a horizontal loop
+about 8 mm across and the remaining 15 mm left vertical.
 
-Two honest caveats. First, an early 20 minute sample suggested 8 dB, and the
+On this build it was worth about **4 dB**, a mean of -72.7 dBm over 147 samples.
+Neufeld reports 6 dB and often more. Whether the gap is wire geometry, the room,
+or his figures being line of sight was never established here.
+
+Two honest caveats. First, an early 20 minute sample suggested 8 dB and the
 longer run did not support it. RSSI in one room spanned 14 dB across a morning,
 so judge a location on hours of samples, not minutes. Second, 4 dB is real but
-it is not transformative, and it did not turn out to be what was blocking the
-polls in that room.
+it is not transformative. The lamp does run reliably in the room that prompted
+the mod, but the failures that remained afterward turned out to be the sensor
+rather than the link, which is the next section.
+
+Neufeld's own conclusion after doing it was to buy a board with a U.FL connector
+next time and hang an external antenna off it. That is the better answer if you
+are still choosing parts.
 
 #### When it is not the WiFi
 
