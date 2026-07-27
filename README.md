@@ -11,6 +11,8 @@ keeps working.
 It is named for what it warns about. Ash falling during wildfire season is when it
 earns its keep.
 
+My weblog post about this is here: [https://cruftbox.com/2026/07/27/ashlight-air-quality-monitor-gadget/](https://cruftbox.com/2026/07/27/ashlight-air-quality-monitor-gadget/)
+
 Built with [ESPHome](https://esphome.io/). The entire device is one YAML file.
 
 > **Home Assistant is required.** The lamp reads `sun.sun` from Home Assistant to
