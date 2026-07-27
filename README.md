@@ -162,6 +162,10 @@ while it does. Measured from a wired host: responses of 0.1s, 6.5s, 11.4s and
 13.2s, plus outright drops, all from a sensor whose own RSSI was -50 dBm. Nothing
 on the ESP32 side can fix that.
 
+This is why the poll is roughly every 6 minutes with fresh jitter each cycle,
+rather than a flat 2: a fixed interval drifts in and out of phase with that 120
+second upload and collides with it for long stretches.
+
 ---
 
 ## Build
